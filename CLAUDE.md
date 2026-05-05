@@ -16,7 +16,9 @@ Monorepo (pnpm workspaces + Turborepo) with apps and packages:
 
 **packages/shared** (`@netrek/shared`): Game constants, TypeScript types, deterministic game logic (damage formulas, physics, collision math). Imported by both client and server. This is the single source of truth for all game rules. If a formula or constant exists in the spec, it belongs here and nowhere else.
 
-**apps/server** (`@netrek/server`): NestJS application. Authoritative game state. 10Hz game loop. WebSocket gateway for game traffic. REST endpoints for lobby, accounts, stats. WebRTC signaling relay for voice. Bot manager and bot AI. Prisma ORM for PostgreSQL.
+**apps/backend** (`@netrek/backend`): NestJS application. Central authority. Owns PostgreSQL + Redis. Handles auth (Google OAuth, JWT sessions), user accounts, server registry, lobby/server browser API, stats storage, match history, and game token signing (ES256). REST-only — no WebSocket.
+
+**apps/server** (`@netrek/server`): NestJS application (lightweight). Runs the authoritative game loop at 10Hz, bot manager, and WebSocket gateway. No database — game state is entirely in-memory during matches. Communicates with the backend via REST (heartbeat, stat push, match reporting). Validates player connections using short-lived game tokens signed by the backend (asymmetric ES256 — server has only the public key). Can run standalone without a backend for local development.
 
 **apps/client** (`@netrek/client`): Next.js application. Lobby UI with SSR. Game view is a full-screen Canvas 2D component. Sends only player inputs over WebSocket. Renders at 60fps with interpolation between 10Hz server updates.
 
@@ -52,6 +54,10 @@ Monorepo (pnpm workspaces + Turborepo) with apps and packages:
 **Binary protocol for game state.** Use ArrayBuffer for the 10Hz game state broadcasts (the hot path). JSON is fine for lobby, chat, scoring, and other low-frequency messages. 16 ships at 10Hz is trivial bandwidth, but JSON parse overhead in the client's 60fps interpolation loop adds up.
 
 **Retro rendering.** Render to a small offscreen canvas (~500x500 or configurable) and scale to display with CSS `image-rendering: pixelated`. Set `imageSmoothingEnabled = false` on the context. Use `ctx.translate(0.5, 0.5)` for pixel-snapped lines. No antialiasing, no gradients, no transparency effects. Dark background, clean vector lines, team-colored geometric shapes.
+
+**Game token auth.** Players connect to game servers using short-lived JWTs (30s) signed by the backend with ES256. The game server verifies with the public key only — it cannot forge tokens. The game token contains userId, username, team, shipType, and player stats (for starbase eligibility).
+
+**Backend owns all persistence.** The game server never touches the database. Stats are pushed to the backend every 60 seconds. Match results are reported at game end. The backend scopes stats by server — official servers aggregate to a shared "official" scope, community servers get their own scope.
 
 ## Code Conventions
 
@@ -96,4 +102,4 @@ PostgreSQL for persistent data only: player accounts, stats, rankings, match his
 
 **Phase 2 (Planet Economy):** Planets, armies, bombing, beaming, T-Mode, win conditions, cloaking, tractor/pressor beams, refitting, temperature system. This is where it becomes Netrek.
 
-**Phase 3 (Multiplayer Infrastructure):** Bots, voice (LiveKit), lobby system, matchmaking, accounts, scoring, ranks, persistent stats.
+**Phase 3 (Multiplayer Infrastructure):** Server separation (backend + game server), game token auth with ES256, server registry (community + official servers), lobby/server browser, live stat tracking, match history, bots. Remaining: voice (LiveKit), matchmaking, rankings formula.
