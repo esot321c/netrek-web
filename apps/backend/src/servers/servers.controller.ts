@@ -9,6 +9,7 @@ import {
   UseGuards,
   BadRequestException,
 } from "@nestjs/common";
+import { SkipThrottle } from "@nestjs/throttler";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { User } from "../auth/decorators/user.decorator";
 import { AuthUser } from "../auth/types/jwt.types";
@@ -74,6 +75,7 @@ export class ServersController {
   }
 
   @Post(":id/heartbeat")
+  @SkipThrottle()
   @UseGuards(ServerTokenGuard)
   heartbeat(@Param("id") id: string, @Body() dto: HeartbeatDto) {
     return this.serversService.heartbeat(id, dto);

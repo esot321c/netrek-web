@@ -8,6 +8,7 @@ import {
   UseGuards,
   Req,
 } from "@nestjs/common";
+import { SkipThrottle } from "@nestjs/throttler";
 import { ServerTokenGuard } from "../servers/guards/server-token.guard";
 import { StatsService } from "./stats.service";
 import { IngestStatsDto } from "./dto/ingest-stats.dto";
@@ -18,6 +19,7 @@ export class StatsController {
   constructor(private readonly statsService: StatsService) {}
 
   @Post("ingest")
+  @SkipThrottle()
   @UseGuards(ServerTokenGuard)
   ingest(@Body() dto: IngestStatsDto, @Req() req: any) {
     const isOfficial: boolean = req.gameServer.isOfficial;
@@ -25,6 +27,7 @@ export class StatsController {
   }
 
   @Post("matches")
+  @SkipThrottle()
   @UseGuards(ServerTokenGuard)
   reportMatch(@Body() dto: ReportMatchDto, @Req() req: any) {
     const isOfficial: boolean = req.gameServer.isOfficial;
