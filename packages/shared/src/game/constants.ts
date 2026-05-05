@@ -183,6 +183,16 @@ export const KILLS_PER_CAPTURE = 0.25;
 /** Minimum players per team to activate T-Mode */
 export const TMODE_MIN_PLAYERS = 4;
 
+// ---------------------------------------------------------------------------
+// Win conditions
+// ---------------------------------------------------------------------------
+
+export const SURRENDER_PLANET_THRESHOLD = 2;
+export const SURRENDER_FREEZE_PLANETS = 3;
+export const SURRENDER_CLEAR_PLANETS = 4;
+/** 20 minutes at 10Hz = 12000 ticks */
+export const SURRENDER_TIMER_TICKS = 20 * 60 * 10;
+
 /** Planet definition for initial placement */
 export interface PlanetDef {
   readonly name: string;

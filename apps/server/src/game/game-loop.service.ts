@@ -47,6 +47,10 @@ import {
   KILLS_PER_BOMB,
   KILLS_PER_CAPTURE,
   TMODE_MIN_PLAYERS,
+  SURRENDER_PLANET_THRESHOLD,
+  SURRENDER_FREEZE_PLANETS,
+  SURRENDER_CLEAR_PLANETS,
+  SURRENDER_TIMER_TICKS,
   PlanetFeature,
   ShipStatus,
   ShipType,
@@ -74,11 +78,15 @@ import {
   angleBetween,
   LockType,
   MAX_PLAYERS,
+  Team,
 } from "@netrek/shared";
 import { GameService } from "./game.service";
 import { BotManagerService } from "./bot";
+import { loadBotConfig, type BotConfig } from "./bot/bot-config";
 
 export const GAME_TICK_EVENT = "game.tick";
+export const GAME_WIN_EVENT = "game.win";
+export const GAME_RESET_EVENT = "game.reset";
 
 @Injectable()
 export class GameLoopService implements OnModuleInit, OnModuleDestroy {
@@ -91,11 +99,21 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
   /** Tournament mode — bombing/beaming only possible when active */
   tmode = false;
 
+  private winPauseTicks = 0;
+  private winningTeam = -1;
+
+  /** Surrender timers per team (0 = inactive) */
+  private readonly surrenderTimers: number[] = [0, 0, 0, 0];
+
+  private readonly botConfig: BotConfig;
+
   constructor(
     private readonly gameService: GameService,
     private readonly eventEmitter: EventEmitter2,
     private readonly botManager: BotManagerService,
-  ) {}
+  ) {
+    this.botConfig = loadBotConfig();
+  }
 
   onModuleInit() {
     this.botManager.init(
@@ -128,6 +146,18 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
   private tick(): void {
     const state = this.gameService.state;
     const inputQueue = this.gameService.inputQueue;
+
+    // Handle win pause — freeze game, show results
+    if (this.winPauseTicks > 0) {
+      this.winPauseTicks--;
+      if (this.winPauseTicks === 0) {
+        this.resetGame();
+      }
+      state.currentTick++;
+      this.eventEmitter.emit(GAME_TICK_EVENT);
+      this.botManager.setTMode(this.tmode);
+      return;
+    }
 
     // Step 1: Process inputs
     this.processInputs(inputQueue, state.ships);
@@ -1435,30 +1465,101 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
   private checkWinCondition(planets: PlanetState[]): void {
     if (!this.tmode) return;
 
-    // Count planets per team
     const teamPlanets = [0, 0, 0, 0];
     for (let i = 0; i < planets.length; i++) {
       const t = planets[i]!.team as number;
       if (t >= 0 && t < 4) teamPlanets[t] = (teamPlanets[t] ?? 0) + 1;
     }
 
-    // Check genocide — if any active team has lost all planets
     for (let t = 0; t < 4; t++) {
-      if (teamPlanets[t] === 0) {
-        // Check if this team had players
-        const ships = this.gameService.state.ships;
-        let hadPlayers = false;
-        for (let i = 0; i < ships.length; i++) {
-          if (ships[i]!.team === t && ships[i]!.playerId) {
-            hadPlayers = true;
-            break;
-          }
-        }
-        if (hadPlayers) {
-          this.logger.log(`GENOCIDE! Team ${t} has lost all planets!`);
-          // In the future: end game, show scoreboard, etc.
+      // Only check teams that have players
+      const ships = this.gameService.state.ships;
+      let hadPlayers = false;
+      for (let i = 0; i < ships.length; i++) {
+        if (ships[i]!.team === t && ships[i]!.playerId) {
+          hadPlayers = true;
+          break;
         }
       }
+      if (!hadPlayers) continue;
+
+      // Genocide — team has 0 planets
+      if (teamPlanets[t] === 0) {
+        const winTeam = this.findWinningTeam(teamPlanets, t);
+        this.triggerWin(winTeam, t, "genocide");
+        return;
+      }
+
+      // Surrender timer logic
+      if (teamPlanets[t]! <= SURRENDER_PLANET_THRESHOLD) {
+        if (this.surrenderTimers[t] === 0) {
+          // Start timer
+          this.surrenderTimers[t] = SURRENDER_TIMER_TICKS;
+          this.logger.log(
+            `Team ${Team[t]} down to ${teamPlanets[t]} planets — 20min surrender timer started`,
+          );
+        } else {
+          // Decrement timer
+          this.surrenderTimers[t]!--;
+          if (this.surrenderTimers[t]! <= 0) {
+            const winTeam = this.findWinningTeam(teamPlanets, t);
+            this.triggerWin(winTeam, t, "timercide");
+            return;
+          }
+        }
+      } else if (teamPlanets[t]! >= SURRENDER_CLEAR_PLANETS) {
+        // Out of danger — clear timer
+        if (this.surrenderTimers[t]! > 0) {
+          this.logger.log(
+            `Team ${Team[t]} back to ${teamPlanets[t]} planets — surrender timer cleared`,
+          );
+          this.surrenderTimers[t] = 0;
+        }
+      } else if (teamPlanets[t]! >= SURRENDER_FREEZE_PLANETS) {
+        // Timer frozen (don't decrement, but don't clear either)
+        // Just don't do anything — timer stays where it is
+      }
     }
+  }
+
+  private findWinningTeam(teamPlanets: number[], losingTeam: number): number {
+    let best = -1;
+    let bestCount = 0;
+    for (let t = 0; t < 4; t++) {
+      if (t === losingTeam) continue;
+      if ((teamPlanets[t] ?? 0) > bestCount) {
+        bestCount = teamPlanets[t] ?? 0;
+        best = t;
+      }
+    }
+    return best;
+  }
+
+  private triggerWin(
+    winningTeam: number,
+    losingTeam: number,
+    type: string,
+  ): void {
+    this.logger.log(
+      `${type.toUpperCase()}! Team ${Team[losingTeam]} eliminated. Team ${Team[winningTeam]} wins!`,
+    );
+    this.winPauseTicks = this.botConfig.winPauseTicks;
+    this.winningTeam = winningTeam;
+    this.eventEmitter.emit(GAME_WIN_EVENT, { losingTeam, winningTeam, type });
+  }
+
+  // -------------------------------------------------------------------------
+  // Game reset
+  // -------------------------------------------------------------------------
+
+  private resetGame(): void {
+    this.logger.log("Resetting game...");
+    this.gameService.state.resetGame();
+    this.tmode = false;
+    this.winningTeam = -1;
+    this.surrenderTimers.fill(0);
+    this.botManager.resetForNewGame();
+    this.eventEmitter.emit(GAME_RESET_EVENT);
+    this.logger.log("Game reset complete");
   }
 }
