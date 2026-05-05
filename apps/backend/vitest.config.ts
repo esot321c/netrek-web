@@ -7,7 +7,7 @@ export default defineConfig({
     globals: true,
     root: "./",
     include: ["src/**/*.spec.ts", "src/**/*.test.ts"],
-    setupFiles: ["./src/test/setup.ts"],
+    setupFiles: [],
     testTimeout: 15000,
     fileParallelism: false,
   },
