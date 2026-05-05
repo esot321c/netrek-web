@@ -457,10 +457,6 @@ export class BotManagerService {
     // Reset name pool so names start fresh
     this.namePool.reset();
 
-    // Reset human counts
-    this.humanCounts[Team.FEDERATION] = 0;
-    this.humanCounts[Team.ROMULANS] = 0;
-
     this.lastRebalanceTick = 0;
 
     // Spawn fresh bots

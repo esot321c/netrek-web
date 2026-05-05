@@ -292,6 +292,10 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
             this.detonate(ship);
             break;
 
+          case InputCommand.ORBIT:
+            this.tryOrbit(ship);
+            break;
+
           case InputCommand.BOMB:
             this.tryBomb(ship);
             break;
@@ -335,6 +339,24 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
   // -------------------------------------------------------------------------
   // Orbit
   // -------------------------------------------------------------------------
+
+  private tryOrbit(ship: ShipState): void {
+    if (ship.orbitPlanetId >= 0) return;
+    if (ship.speed > ORBIT_MAX_SPEED) return;
+    const planets = this.gameService.state.planets;
+    let bestIdx = -1;
+    let bestDist = ORBIT_DIST + 1;
+    for (let i = 0; i < planets.length; i++) {
+      const d = distance(ship.x, ship.y, planets[i]!.x, planets[i]!.y);
+      if (d < bestDist) {
+        bestDist = d;
+        bestIdx = i;
+      }
+    }
+    if (bestIdx >= 0) {
+      this.enterOrbit(ship, bestIdx);
+    }
+  }
 
   /** Snap a ship into orbit around a planet. */
   private enterOrbit(ship: ShipState, planetIdx: number): void {
@@ -1443,9 +1465,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     }
 
     const wasTmode = this.tmode;
-    // TODO: restore proper T-Mode check once bots are implemented (Phase 3)
-    // Original: this.tmode = teamsWithEnough >= 2;
-    this.tmode = true;
+    this.tmode = teamsWithEnough >= 2;
     if (this.tmode && !wasTmode) {
       this.logger.log("T-Mode activated!");
     } else if (!this.tmode && wasTmode) {
