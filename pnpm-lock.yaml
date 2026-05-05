@@ -91,6 +91,9 @@ importers:
       helmet:
         specifier: ^8.1.0
         version: 8.1.0
+      jose:
+        specifier: ^6.2.3
+        version: 6.2.3
       passport:
         specifier: ^0.7.0
         version: 0.7.0
@@ -5906,6 +5909,12 @@ packages:
     resolution:
       {
         integrity: sha512-d7kPDd34KO/YnzaDOlikGpOurfF0ByC2sEV4cANCtdqLlTfBlw2p14O/5d/zv40gJPbIQxfES3nSx1/oYNyuZQ==,
+      }
+
+  jose@6.2.3:
+    resolution:
+      {
+        integrity: sha512-YYVDInQKFJfR/xa3ojUTl8c2KoTwiL1R5Wg9YCydwH0x0B9grbzlg5HC7mMjCtUJjbQ/YnGEZIhI5tCgfTb4Hw==,
       }
 
   js-tokens@10.0.0:
@@ -12142,6 +12151,8 @@ snapshots:
   jiti@2.6.1: {}
 
   jose@6.2.2: {}
+
+  jose@6.2.3: {}
 
   js-tokens@10.0.0: {}
 
