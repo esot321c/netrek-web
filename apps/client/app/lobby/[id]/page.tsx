@@ -87,9 +87,11 @@ export default function GameDetailPage({
     setJoinError(null);
     try {
       const result = await joinServer(id, selectedTeam, selectedShip);
-      router.push(
-        `/game/${id}?token=${encodeURIComponent(result.gameToken)}&ws=${encodeURIComponent(result.wsUrl)}`,
+      sessionStorage.setItem(
+        `game:${id}`,
+        JSON.stringify({ gameToken: result.gameToken, wsUrl: result.wsUrl }),
       );
+      router.push(`/game/${id}`);
     } catch (e) {
       setJoinError((e as Error).message);
       setJoining(false);

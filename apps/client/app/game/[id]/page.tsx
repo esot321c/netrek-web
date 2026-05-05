@@ -1,15 +1,26 @@
 "use client";
 
-import { Suspense, use } from "react";
-import { useSearchParams } from "next/navigation";
+import { use, useEffect, useState } from "react";
 import GameCanvas from "@/components/game-canvas";
 
 function GamePageInner({ id }: { id: string }) {
-  const searchParams = useSearchParams();
-  const token = searchParams.get("token");
-  const ws = searchParams.get("ws");
+  const [creds, setCreds] = useState<{
+    gameToken: string;
+    wsUrl: string;
+  } | null>(null);
+  const [missing, setMissing] = useState(false);
 
-  if (!token || !ws) {
+  useEffect(() => {
+    const raw = sessionStorage.getItem(`game:${id}`);
+    if (!raw) {
+      setMissing(true);
+      return;
+    }
+    sessionStorage.removeItem(`game:${id}`);
+    setCreds(JSON.parse(raw));
+  }, [id]);
+
+  if (missing) {
     return (
       <div
         style={{
@@ -39,7 +50,9 @@ function GamePageInner({ id }: { id: string }) {
     );
   }
 
-  return <GameCanvas wsUrl={ws} gameToken={token} />;
+  if (!creds) return null;
+
+  return <GameCanvas wsUrl={creds.wsUrl} gameToken={creds.gameToken} />;
 }
 
 export default function GamePage({
@@ -48,26 +61,5 @@ export default function GamePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-
-  return (
-    <Suspense
-      fallback={
-        <div
-          style={{
-            height: "100vh",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "#000",
-            color: "#666",
-            fontFamily: "monospace",
-          }}
-        >
-          Loading...
-        </div>
-      }
-    >
-      <GamePageInner id={id} />
-    </Suspense>
-  );
+  return <GamePageInner id={id} />;
 }
