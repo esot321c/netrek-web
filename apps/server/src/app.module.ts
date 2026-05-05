@@ -6,6 +6,7 @@ import { AppConfigModule } from "./config/config.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { AuthModule } from "./auth/auth.module";
 import { GameModule } from "./game/game.module";
+import { LobbyModule } from "./lobby/lobby.module";
 import { AppController } from "./app.controller";
 
 @Module({
@@ -27,6 +28,9 @@ import { AppController } from "./app.controller";
 
     // Game
     GameModule,
+
+    // Lobby
+    LobbyModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
