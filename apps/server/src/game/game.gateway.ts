@@ -10,10 +10,16 @@ import {
   ConnectedSocket,
 } from "@nestjs/websockets";
 import { Server, Socket } from "socket.io";
-import { Team, ShipType, deserializeInput } from "@netrek/shared";
+import {
+  Team,
+  ShipType,
+  deserializeInput,
+  type ChatMessage,
+} from "@netrek/shared";
 import { WsAuthService } from "./guards/ws-auth.guard";
 import { GameService } from "./game.service";
 import { GameBroadcastService } from "./game-broadcast.service";
+import { BotManagerService } from "./bot";
 
 @WebSocketGateway({
   namespace: "/game",
@@ -34,6 +40,7 @@ export class GameGateway
     private readonly wsAuth: WsAuthService,
     private readonly gameService: GameService,
     private readonly broadcastService: GameBroadcastService,
+    private readonly botManager: BotManagerService,
   ) {}
 
   afterInit(server: Server): void {
@@ -67,7 +74,11 @@ export class GameGateway
   handleDisconnect(client: Socket): void {
     const player = this.broadcastService.removePlayer(client.id);
     if (player) {
+      const team = this.gameService.state.ships[player.slot]?.team;
       this.gameService.leaveGame(player.slot);
+      if (team !== undefined) {
+        this.botManager.onHumanLeave(team);
+      }
       this.logger.log(
         `Player ${player.userId} disconnected, slot ${player.slot}`,
       );
@@ -103,6 +114,7 @@ export class GameGateway
     }
 
     this.broadcastService.addPlayer(client.id, client, slot, userId);
+    this.botManager.onHumanJoin(data.team as Team);
     return { slot };
   }
 
@@ -147,5 +159,38 @@ export class GameGateway
 
     this.gameService.respawn(player.slot, data.shipType as ShipType);
     return { ok: true };
+  }
+
+  @SubscribeMessage("chat")
+  handleChat(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { text: string; team: number },
+  ): void {
+    const player = this.broadcastService.getPlayerBySocketId(client.id);
+    if (!player) return;
+
+    const ship = this.gameService.state.ships[player.slot];
+    if (!ship) return;
+
+    const message: ChatMessage = {
+      senderSlot: player.slot,
+      senderName: player.userId,
+      team: data.team,
+      text: data.text,
+      tick: this.gameService.state.currentTick,
+    };
+
+    // Broadcast to team or all
+    if (this.server) {
+      for (const p of this.broadcastService.getAllPlayers()) {
+        const pShip = this.gameService.state.ships[p.slot];
+        if (data.team === -1 || (pShip && pShip.team === data.team)) {
+          p.socket.emit("chat", message);
+        }
+      }
+    }
+
+    // Forward to bot manager for order processing
+    this.botManager.onChatMessage(message);
   }
 }

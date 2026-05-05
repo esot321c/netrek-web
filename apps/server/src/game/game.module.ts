@@ -6,6 +6,7 @@ import { GameLoopService } from "./game-loop.service";
 import { GameBroadcastService } from "./game-broadcast.service";
 import { GameGateway } from "./game.gateway";
 import { WsAuthService } from "./guards/ws-auth.guard";
+import { BotManagerService } from "./bot";
 
 @Module({
   imports: [
@@ -22,7 +23,8 @@ import { WsAuthService } from "./guards/ws-auth.guard";
     GameBroadcastService,
     GameGateway,
     WsAuthService,
+    BotManagerService,
   ],
-  exports: [GameService, GameLoopService],
+  exports: [GameService, GameLoopService, BotManagerService],
 })
 export class GameModule {}

@@ -151,8 +151,10 @@ export const TRACTOR_ENGINE_HEAT = 5;
 // Hostile planet damage
 // ---------------------------------------------------------------------------
 
-/** Damage per tick per 10 armies on hostile planet, when in orbit range */
-export const HOSTILE_PLANET_DMG_PER_10 = 2;
+/** Base damage per tick from hostile planet (with armies > 0) */
+export const HOSTILE_PLANET_DMG_BASE = 0.3;
+/** Additional damage per tick per 10 armies on hostile planet */
+export const HOSTILE_PLANET_DMG_PER_10 = 0.2;
 
 // ---------------------------------------------------------------------------
 // Refitting
@@ -182,6 +184,16 @@ export const KILLS_PER_CAPTURE = 0.25;
 
 /** Minimum players per team to activate T-Mode */
 export const TMODE_MIN_PLAYERS = 4;
+
+// ---------------------------------------------------------------------------
+// Win conditions
+// ---------------------------------------------------------------------------
+
+export const SURRENDER_PLANET_THRESHOLD = 2;
+export const SURRENDER_FREEZE_PLANETS = 3;
+export const SURRENDER_CLEAR_PLANETS = 4;
+/** 20 minutes at 10Hz = 12000 ticks */
+export const SURRENDER_TIMER_TICKS = 20 * 60 * 10;
 
 /** Planet definition for initial placement */
 export interface PlanetDef {

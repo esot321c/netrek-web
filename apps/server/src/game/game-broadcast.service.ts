@@ -3,7 +3,11 @@ import { OnEvent } from "@nestjs/event-emitter";
 import { Server, Socket } from "socket.io";
 import { serializeGameState } from "@netrek/shared";
 import { GameService } from "./game.service";
-import { GameLoopService, GAME_TICK_EVENT } from "./game-loop.service";
+import {
+  GameLoopService,
+  GAME_TICK_EVENT,
+  GAME_WIN_EVENT,
+} from "./game-loop.service";
 
 interface ConnectedPlayer {
   socket: Socket;
@@ -52,6 +56,21 @@ export class GameBroadcastService {
       if (player.userId === userId) return player;
     }
     return undefined;
+  }
+
+  getAllPlayers(): ConnectedPlayer[] {
+    return Array.from(this.players.values());
+  }
+
+  @OnEvent(GAME_WIN_EVENT)
+  handleWin(data: {
+    losingTeam: number;
+    winningTeam: number;
+    type: string;
+  }): void {
+    for (const player of this.players.values()) {
+      player.socket.emit("game_win", data);
+    }
   }
 
   @OnEvent(GAME_TICK_EVENT)

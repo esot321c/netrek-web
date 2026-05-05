@@ -253,4 +253,31 @@ export class GameState {
     }
     return null;
   }
+
+  /** Reset all game state for a new game. */
+  resetGame(): void {
+    for (let i = 0; i < this.ships.length; i++) {
+      this.clearShip(i);
+    }
+    for (let i = 0; i < this.torps.length; i++) {
+      this.torps[i]!.alive = false;
+    }
+    for (let i = 0; i < this.phasers.length; i++) {
+      this.phasers[i]!.alive = false;
+    }
+    for (let i = 0; i < this.explosions.length; i++) {
+      this.explosions[i]!.alive = false;
+    }
+
+    for (let i = 0; i < PLANET_DEFS.length && i < this.planets.length; i++) {
+      const def = PLANET_DEFS[i]!;
+      const planet = this.planets[i]!;
+      planet.team = def.team as Team;
+      planet.armies = def.armies;
+      planet.features = def.features;
+      planet.lastPopTick = 0;
+    }
+    randomizePlanetFeatures(this.planets);
+    this.currentTick = 0;
+  }
 }
