@@ -98,4 +98,9 @@ export class GameService {
     }
     return count;
   }
+
+  isBot(slot: number): boolean {
+    const ship = this.state.ships[slot];
+    return ship?.playerId.startsWith("bot:") ?? false;
+  }
 }

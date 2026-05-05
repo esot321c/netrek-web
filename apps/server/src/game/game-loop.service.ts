@@ -76,6 +76,7 @@ import {
   MAX_PLAYERS,
 } from "@netrek/shared";
 import { GameService } from "./game.service";
+import { BotManagerService } from "./bot";
 
 export const GAME_TICK_EVENT = "game.tick";
 
@@ -93,9 +94,16 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly gameService: GameService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly botManager: BotManagerService,
   ) {}
 
   onModuleInit() {
+    this.botManager.init(
+      this.gameService.state,
+      this.gameService.inputQueue,
+      this.alertStatuses,
+    );
+    this.botManager.spawnInitialBots();
     this.start();
   }
 
@@ -177,6 +185,8 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
 
     // Emit tick event for broadcast
     this.eventEmitter.emit(GAME_TICK_EVENT);
+
+    this.botManager.setTMode(this.tmode);
   }
 
   // -------------------------------------------------------------------------

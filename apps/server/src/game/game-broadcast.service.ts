@@ -54,6 +54,10 @@ export class GameBroadcastService {
     return undefined;
   }
 
+  getAllPlayers(): ConnectedPlayer[] {
+    return Array.from(this.players.values());
+  }
+
   @OnEvent(GAME_TICK_EVENT)
   handleTick(): void {
     if (this.players.size === 0) return;
