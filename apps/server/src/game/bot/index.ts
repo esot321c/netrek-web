@@ -1,3 +1,3 @@
-// Barrel exports for bot module — will be populated as files are created
-export * from "./bot-navigation";
-export * from "./bot-ai";
+export { BotManagerService } from "./bot-manager.service";
+export { BotPlayer } from "./bot-player";
+export { BotBrain } from "./bot-ai";
