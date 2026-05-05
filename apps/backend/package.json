@@ -22,11 +22,9 @@
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.1.19",
-    "@nestjs/platform-socket.io": "^11.1.19",
     "@nestjs/swagger": "^11.3.2",
     "@nestjs/testing": "^11.1.19",
     "@nestjs/throttler": "^6.5.0",
-    "@nestjs/websockets": "^11.1.19",
     "@netrek/shared": "workspace:*",
     "@prisma/adapter-pg": "^7.7.0",
     "@prisma/client": "^7.7.0",
@@ -41,8 +39,7 @@
     "passport-jwt": "^4.0.1",
     "pg": "^8.20.0",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.2",
-    "socket.io": "^4.8.3"
+    "rxjs": "^7.8.2"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.21",

@@ -52,9 +52,6 @@ importers:
       "@nestjs/platform-express":
         specifier: ^11.1.19
         version: 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)
-      "@nestjs/platform-socket.io":
-        specifier: ^11.1.19
-        version: 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/websockets@11.1.19)(rxjs@7.8.2)
       "@nestjs/swagger":
         specifier: ^11.3.2
         version: 11.3.2(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)
@@ -64,9 +61,6 @@ importers:
       "@nestjs/throttler":
         specifier: ^6.5.0
         version: 6.5.0(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)(reflect-metadata@0.2.2)
-      "@nestjs/websockets":
-        specifier: ^11.1.19
-        version: 11.1.19(@nestjs/common@11.1.19(class-transformer@0.5.1)(class-validator@0.15.1)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.19)(@nestjs/platform-socket.io@11.1.19)(reflect-metadata@0.2.2)(rxjs@7.8.2)
       "@netrek/shared":
         specifier: workspace:*
         version: link:../../packages/shared
@@ -112,9 +106,6 @@ importers:
       rxjs:
         specifier: ^7.8.2
         version: 7.8.2
-      socket.io:
-        specifier: ^4.8.3
-        version: 4.8.3
     devDependencies:
       "@nestjs/cli":
         specifier: ^11.0.21

@@ -15,9 +15,9 @@ export class AppConfig {
 
   get api() {
     return {
-      port: parseInt(this.configService.get("API_PORT") ?? "3021", 10),
+      port: parseInt(this.configService.get("API_PORT") ?? "3012", 10),
       corsOrigin:
-        this.configService.get("CORS_ORIGIN") ?? "http://localhost:3020",
+        this.configService.get("CORS_ORIGIN") ?? "http://localhost:3011",
     };
   }
 
