@@ -8,6 +8,7 @@ import { PrismaModule } from "./prisma/prisma.module";
 import { AuthModule } from "./auth/auth.module";
 import { LobbyModule } from "./lobby/lobby.module";
 import { ServersModule } from "./servers/servers.module";
+import { StatsModule } from "./stats/stats.module";
 import { AppController } from "./app.controller";
 
 @Module({
@@ -26,6 +27,7 @@ import { AppController } from "./app.controller";
     AuthModule,
     LobbyModule,
     ServersModule,
+    StatsModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
