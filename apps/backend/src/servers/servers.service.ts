@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { Interval } from "@nestjs/schedule";
 import { PrismaService } from "../prisma/prisma.service";
+import { AppConfig } from "../config/app.config";
 import { randomBytes, createHash } from "crypto";
 import { CreateServerDto } from "./dto/create-server.dto";
 import { UpdateServerDto } from "./dto/update-server.dto";
@@ -19,7 +20,10 @@ function hashToken(token: string): string {
 
 @Injectable()
 export class ServersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: AppConfig,
+  ) {}
 
   async create(ownerId: string, dto: CreateServerDto) {
     const count = await this.prisma.gameServer.count({
@@ -206,6 +210,8 @@ export class ServersService {
 
   @Interval(30_000)
   async checkStaleServers() {
-    await this.markStaleServersOffline(90);
+    await this.markStaleServersOffline(
+      this.config.serverHeartbeat.timeoutSeconds,
+    );
   }
 }

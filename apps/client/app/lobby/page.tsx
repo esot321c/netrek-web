@@ -9,11 +9,11 @@ import { apiFetch } from "@/lib/api/client";
 interface ServerListing {
   id: string;
   name: string;
-  official: boolean;
+  isOfficial: boolean;
   region: string;
   playerCount: number;
   maxPlayers: number;
-  phase: string;
+  gamePhase: string;
 }
 
 export default function LobbyPage() {
@@ -106,7 +106,7 @@ export default function LobbyPage() {
                     <span className="font-semibold text-gray-100 truncate">
                       {server.name}
                     </span>
-                    {server.official ? (
+                    {server.isOfficial ? (
                       <span className="shrink-0 rounded bg-yellow-500 px-1.5 py-0.5 text-xs font-bold text-gray-900">
                         OFFICIAL
                       </span>
@@ -125,12 +125,12 @@ export default function LobbyPage() {
                 <div className="text-sm text-gray-400 shrink-0">
                   <span
                     className={
-                      server.phase === "active"
+                      server.gamePhase === "active"
                         ? "text-green-400"
                         : "text-gray-500"
                     }
                   >
-                    {server.phase}
+                    {server.gamePhase}
                   </span>
                 </div>
 

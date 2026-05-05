@@ -9,11 +9,11 @@ import { Team, ShipType } from "@netrek/shared";
 interface ServerDetail {
   id: string;
   name: string;
-  official: boolean;
+  isOfficial: boolean;
   region: string;
   playerCount: number;
   maxPlayers: number;
-  phase: string;
+  gamePhase: string;
 }
 
 const TEAMS = [
@@ -132,7 +132,7 @@ export default function GameDetailPage({
                   <h1 className="text-2xl font-bold text-gray-100">
                     {server.name}
                   </h1>
-                  {server.official ? (
+                  {server.isOfficial ? (
                     <span className="rounded bg-yellow-500 px-2 py-0.5 text-xs font-bold text-gray-900">
                       OFFICIAL
                     </span>
@@ -147,12 +147,12 @@ export default function GameDetailPage({
                   {server.maxPlayers} players &mdash;{" "}
                   <span
                     className={
-                      server.phase === "active"
+                      server.gamePhase === "active"
                         ? "text-green-400"
                         : "text-gray-500"
                     }
                   >
-                    {server.phase}
+                    {server.gamePhase}
                   </span>
                 </p>
               </div>

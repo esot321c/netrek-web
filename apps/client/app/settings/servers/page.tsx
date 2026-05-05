@@ -8,10 +8,10 @@ import { apiFetch } from "@/lib/api/client";
 interface OwnedServer {
   id: string;
   name: string;
-  hostUrl: string;
+  host: string;
   region: string;
   maxPlayers: number;
-  official: boolean;
+  isOfficial: boolean;
 }
 
 const REGIONS = [
@@ -73,16 +73,16 @@ export default function ServersSettingsPage() {
     setFormError(null);
     setNewToken(null);
     try {
-      const result = await apiFetch<{ token: string }>("/servers", {
+      const result = await apiFetch<{ serverToken: string }>("/servers", {
         method: "POST",
         body: JSON.stringify({
           name: formName,
-          hostUrl: formHost,
+          host: formHost,
           region: formRegion,
           maxPlayers: formMaxPlayers,
         }),
       });
-      setNewToken(result.token);
+      setNewToken(result.serverToken);
       setFormName("");
       setFormHost("");
       setFormRegion(REGIONS[0] ?? "us-east");
@@ -101,11 +101,11 @@ export default function ServersSettingsPage() {
       [serverId]: { ...prev[serverId], rotating: true, error: undefined },
     }));
     try {
-      const result = await apiFetch<{ token: string }>(
+      const result = await apiFetch<{ serverToken: string }>(
         `/servers/${serverId}/rotate-token`,
         { method: "POST" },
       );
-      setNewToken(result.token);
+      setNewToken(result.serverToken);
     } catch (e) {
       setActionStates((prev) => ({
         ...prev,
@@ -210,7 +210,7 @@ export default function ServersSettingsPage() {
                         {server.region} &mdash; max {server.maxPlayers} players
                       </div>
                       <div className="text-xs text-gray-600 mt-0.5 truncate">
-                        {server.hostUrl}
+                        {server.host}
                       </div>
                     </div>
                     <div className="flex gap-2 shrink-0">
