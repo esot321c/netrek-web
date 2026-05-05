@@ -1,15 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Team, ShipType, ShipStatus } from "@netrek/shared";
+import { ShipType, ShipStatus, Team } from "@netrek/shared";
 import {
   connect,
   disconnect,
   onState,
   onConnect,
   onDisconnect,
-  onJoinResult,
-  sendJoin,
+  onJoined,
   sendRespawn,
 } from "@/lib/game/socket";
 import {
@@ -38,11 +37,6 @@ const SHIPS = [
   { type: ShipType.SB, key: "O", name: "Starbase" },
 ] as const;
 
-const TEAMS = [
-  { id: Team.FEDERATION, name: "Federation", color: "#ffff00" },
-  { id: Team.ROMULANS, name: "Romulans", color: "#ff4444" },
-] as const;
-
 const TEAM_COLORS: Record<number, string> = {
   [Team.FEDERATION]: "#ffff00",
   [Team.ROMULANS]: "#ff4444",
@@ -53,12 +47,17 @@ const TEAM_COLORS: Record<number, string> = {
 /** Bottom panel height in pixels */
 const BOTTOM_PANEL_H = 140;
 
-export default function GameCanvas() {
+interface GameCanvasProps {
+  wsUrl: string;
+  gameToken: string;
+}
+
+export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const galCanvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
   const [connected, setConnected] = useState(false);
-  const [phase, setPhase] = useState<"select" | "playing" | "dead">("select");
+  const [phase, setPhase] = useState<"waiting" | "playing" | "dead">("waiting");
   const [showPlayerList, setShowPlayerList] = useState(true);
   const [showHelp, setShowHelp] = useState(false);
   const [infoTarget, setInfoTarget] = useState<string | null>(null);
@@ -96,8 +95,11 @@ export default function GameCanvas() {
     initSound();
     const cleanupInput = setupInput(canvas);
 
-    // Socket connection
-    onConnect(() => setConnected(true));
+    // Socket events
+    onConnect(() => {
+      setConnected(true);
+      resumeAudio();
+    });
     onDisconnect(() => setConnected(false));
 
     onState((state) => {
@@ -113,11 +115,9 @@ export default function GameCanvas() {
       }
     });
 
-    onJoinResult((result) => {
-      if ("slot" in result) {
-        setMySlot(result.slot);
-        setPhase("playing");
-      }
+    onJoined((data) => {
+      setMySlot(data.slot);
+      setPhase("playing");
     });
 
     // Keyboard shortcuts for panels
@@ -130,14 +130,12 @@ export default function GameCanvas() {
         setShowHelp((v) => !v);
       }
       if (e.key === "i" || e.key === "I") {
-        // Show info on nearest player/planet to mouse cursor
-        // For now toggle the info panel; content updates on mouse position
         setInfoTarget((v) => (v !== null ? null : ""));
       }
     }
     window.addEventListener("keydown", handlePanelKeys);
 
-    connect();
+    connect(wsUrl, gameToken);
 
     // Render loop
     function loop() {
@@ -156,12 +154,7 @@ export default function GameCanvas() {
       resetState();
       resetSound();
     };
-  }, [handleResize]);
-
-  const handleJoin = (team: number, shipType: number) => {
-    resumeAudio();
-    sendJoin(team, shipType);
-  };
+  }, [handleResize, wsUrl, gameToken]);
 
   const handleRespawn = (shipType: number) => {
     sendRespawn(shipType);
@@ -193,6 +186,15 @@ export default function GameCanvas() {
           {!connected && (
             <Overlay>
               <p style={{ color: "#aaa", fontSize: 18 }}>Connecting...</p>
+            </Overlay>
+          )}
+
+          {/* Waiting for "joined" event */}
+          {connected && phase === "waiting" && (
+            <Overlay>
+              <p style={{ color: "#aaa", fontSize: 18 }}>
+                Waiting to join game...
+              </p>
             </Overlay>
           )}
 
@@ -261,8 +263,8 @@ export default function GameCanvas() {
           {/* Info panel (i key) */}
           {infoTarget !== null && snapshot && <InfoPanel state={snapshot} />}
 
-          {/* Ship selection */}
-          {connected && (phase === "select" || phase === "dead") && (
+          {/* Respawn UI (shown when dead) */}
+          {connected && phase === "dead" && (
             <Overlay>
               <div style={{ textAlign: "center" }}>
                 <h2
@@ -272,90 +274,35 @@ export default function GameCanvas() {
                     fontFamily: "monospace",
                   }}
                 >
-                  {phase === "dead"
-                    ? "DESTROYED — Select Ship"
-                    : "Select Team & Ship"}
+                  DESTROYED — Select Ship to Respawn
                 </h2>
-
-                {phase === "select" && (
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 20,
-                      justifyContent: "center",
-                      marginBottom: 20,
-                    }}
-                  >
-                    {TEAMS.map((team) => (
-                      <div key={team.id}>
-                        <h3
-                          style={{
-                            color: team.color,
-                            fontFamily: "monospace",
-                            marginBottom: 10,
-                          }}
-                        >
-                          {team.name}
-                        </h3>
-                        <div
-                          style={{
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: 6,
-                          }}
-                        >
-                          {SHIPS.map((ship) => (
-                            <button
-                              key={ship.type}
-                              onClick={() => handleJoin(team.id, ship.type)}
-                              style={{
-                                background: "#222",
-                                color: team.color,
-                                border: `1px solid ${team.color}44`,
-                                padding: "6px 16px",
-                                fontFamily: "monospace",
-                                fontSize: 14,
-                                cursor: "pointer",
-                              }}
-                            >
-                              [{ship.key}] {ship.name}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {phase === "dead" && (
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 6,
-                      alignItems: "center",
-                    }}
-                  >
-                    {SHIPS.map((ship) => (
-                      <button
-                        key={ship.type}
-                        onClick={() => handleRespawn(ship.type)}
-                        style={{
-                          background: "#222",
-                          color: "#fff",
-                          border: "1px solid #444",
-                          padding: "6px 24px",
-                          fontFamily: "monospace",
-                          fontSize: 14,
-                          cursor: "pointer",
-                          width: 200,
-                        }}
-                      >
-                        [{ship.key}] {ship.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                    alignItems: "center",
+                  }}
+                >
+                  {SHIPS.map((ship) => (
+                    <button
+                      key={ship.type}
+                      onClick={() => handleRespawn(ship.type)}
+                      style={{
+                        background: "#222",
+                        color: "#fff",
+                        border: "1px solid #444",
+                        padding: "6px 24px",
+                        fontFamily: "monospace",
+                        fontSize: 14,
+                        cursor: "pointer",
+                        width: 200,
+                      }}
+                    >
+                      [{ship.key}] {ship.name}
+                    </button>
+                  ))}
+                </div>
               </div>
             </Overlay>
           )}
@@ -470,7 +417,6 @@ function InfoPanel({
 }: {
   state: import("@netrek/shared").ClientGameState;
 }) {
-  // Show summary of nearest entities (simplified — no mouse tracking yet)
   const mySlot = getMySlot();
   const myShip = state.ships.find((s) => s.slotIndex === mySlot);
   if (!myShip) return null;
@@ -485,12 +431,11 @@ function InfoPanel({
   ];
   const TEAM_NAMES_FULL = ["Federation", "Romulans", "Klingons", "Orions"];
 
-  // Find closest enemy ship and closest planet
   let closestEnemy: (typeof state.ships)[0] | null = null;
   let closestEnemyDist = Infinity;
   for (const ship of state.ships) {
     if (ship.slotIndex === mySlot) continue;
-    if (ship.status === 2) continue; // DEAD
+    if (ship.status === 2) continue;
     if (ship.team === myShip.team) continue;
     const dx = ship.x - myShip.x;
     const dy = ship.y - myShip.y;
