@@ -213,10 +213,6 @@ function handleKeyDown(e: KeyboardEvent): void {
       e.preventDefault();
       sendInput(InputCommand.DETONATE_SELF, 0);
       break;
-    case "o":
-      e.preventDefault();
-      sendInput(InputCommand.ORBIT, 0);
-      break;
     case "b":
       e.preventDefault();
       sendInput(InputCommand.BOMB, 0);

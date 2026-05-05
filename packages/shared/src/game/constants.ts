@@ -151,8 +151,10 @@ export const TRACTOR_ENGINE_HEAT = 5;
 // Hostile planet damage
 // ---------------------------------------------------------------------------
 
-/** Damage per tick per 10 armies on hostile planet, when in orbit range */
-export const HOSTILE_PLANET_DMG_PER_10 = 2;
+/** Base damage per tick from hostile planet (with armies > 0) */
+export const HOSTILE_PLANET_DMG_BASE = 0.3;
+/** Additional damage per tick per 10 armies on hostile planet */
+export const HOSTILE_PLANET_DMG_PER_10 = 0.2;
 
 // ---------------------------------------------------------------------------
 // Refitting

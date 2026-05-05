@@ -39,6 +39,7 @@ import {
   UNCLOAK_TICKS,
   TRACTOR_FUEL_PER_TICK,
   TRACTOR_ENGINE_HEAT,
+  HOSTILE_PLANET_DMG_BASE,
   HOSTILE_PLANET_DMG_PER_10,
   REFIT_TICKS,
   REFIT_MIN_SHIELD_PCT,
@@ -899,11 +900,10 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
         const dist = distance(ship.x, ship.y, planet.x, planet.y);
         if (dist > ORBIT_DIST * 2) continue;
 
-        // Damage scales with army count (per 10 armies)
-        const dmg = HOSTILE_PLANET_DMG_PER_10 * Math.floor(planet.armies / 10);
-        if (dmg > 0) {
-          applyDamage(ship, dmg);
-        }
+        const dmg =
+          HOSTILE_PLANET_DMG_BASE +
+          HOSTILE_PLANET_DMG_PER_10 * Math.floor(planet.armies / 10);
+        applyDamage(ship, dmg);
       }
     }
   }
