@@ -31,19 +31,21 @@ export function nearestPlanet(
   return best;
 }
 
-/** Find the closest alive enemy ship. Skips own slot and dead/same-team ships. */
+/** Find the closest alive enemy ship. Only considers ships on enemyTeam. */
 export function nearestEnemyShip(
   x: number,
   y: number,
   myTeam: Team,
   mySlot: number,
   ships: ClientShip[],
+  enemyTeam?: Team,
 ): ClientShip | null {
   let best: ClientShip | null = null;
   let bestDist = Infinity;
   for (const s of ships) {
     if (s.slotIndex === mySlot) continue;
-    if (s.team === myTeam) continue;
+    if (enemyTeam !== undefined ? s.team !== enemyTeam : s.team === myTeam)
+      continue;
     if (s.status !== ShipStatus.ALIVE) continue;
     const d = distance(x, y, s.x, s.y);
     if (d < bestDist) {
@@ -101,18 +103,23 @@ export function nearestFriendlyPlanet(
   return best;
 }
 
-/** Find the closest planet owned by an enemy (not own team, not neutral 0xff). */
+/** Find the closest planet owned by the enemy team. */
 export function nearestEnemyPlanet(
   x: number,
   y: number,
   team: Team,
   planets: ClientPlanet[],
+  enemyTeam?: Team,
 ): ClientPlanet | null {
   let best: ClientPlanet | null = null;
   let bestDist = Infinity;
   for (const p of planets) {
-    if (p.team === team) continue;
-    if (p.team === 0xff) continue;
+    if (enemyTeam !== undefined) {
+      if (p.team !== enemyTeam) continue;
+    } else {
+      if (p.team === team) continue;
+      if (p.team === 0xff) continue;
+    }
     const d = distance(x, y, p.x, p.y);
     if (d < bestDist) {
       bestDist = d;
@@ -189,10 +196,15 @@ export function planetsOwnedByTeam(
  * ShipType.AS (4) or currently beaming down (beaming === 2).
  * Only alive ships are included.
  */
-export function enemyCarriers(myTeam: Team, ships: ClientShip[]): ClientShip[] {
+export function enemyCarriers(
+  myTeam: Team,
+  ships: ClientShip[],
+  enemyTeam?: Team,
+): ClientShip[] {
   const result: ClientShip[] = [];
   for (const s of ships) {
-    if (s.team === myTeam) continue;
+    if (enemyTeam !== undefined ? s.team !== enemyTeam : s.team === myTeam)
+      continue;
     if (s.status !== ShipStatus.ALIVE) continue;
     if (s.shipType === ShipType.AS || s.beaming === 2) {
       result.push(s);

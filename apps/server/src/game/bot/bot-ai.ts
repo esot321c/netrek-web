@@ -82,6 +82,7 @@ const OGG_DETONATE_DIST = 500;
 export class BotBrain {
   currentState = BotAIState.PATROL;
   public slot: number;
+  readonly enemyTeam: Team;
 
   // Per-state targets
   private patrolTargetPlanetId = -1;
@@ -103,6 +104,7 @@ export class BotBrain {
     slot: number,
   ) {
     this.slot = slot;
+    this.enemyTeam = team === Team.FEDERATION ? Team.ROMULANS : Team.FEDERATION;
   }
 
   // ---------------------------------------------------------------------------
@@ -162,7 +164,7 @@ export class BotBrain {
     // -------------------------------------------------------------------------
     if (this.difficulty === BotDifficulty.VETERAN) {
       // OGG enemy carriers
-      const carriers = enemyCarriers(this.team, ships);
+      const carriers = enemyCarriers(this.team, ships, this.enemyTeam);
       if (carriers.length > 0) {
         const bestCarrier = selectTarget(myX, myY, carriers, this.difficulty);
         if (bestCarrier !== null) {
@@ -196,7 +198,14 @@ export class BotBrain {
     // Priority 4: Competent+ intercept enemy nearby
     // -------------------------------------------------------------------------
     if (this.difficulty >= BotDifficulty.COMPETENT) {
-      const nearby = nearestEnemyShip(myX, myY, this.team, this.slot, ships);
+      const nearby = nearestEnemyShip(
+        myX,
+        myY,
+        this.team,
+        this.slot,
+        ships,
+        this.enemyTeam,
+      );
       if (
         nearby !== null &&
         distance(myX, myY, nearby.x, nearby.y) <= ATTACK_TRIGGER_DIST
@@ -213,7 +222,14 @@ export class BotBrain {
     // Priority 5: All-difficulty attack transition from PATROL
     // -------------------------------------------------------------------------
     if (this.currentState === BotAIState.PATROL) {
-      const nearby = nearestEnemyShip(myX, myY, this.team, this.slot, ships);
+      const nearby = nearestEnemyShip(
+        myX,
+        myY,
+        this.team,
+        this.slot,
+        ships,
+        this.enemyTeam,
+      );
       if (
         nearby !== null &&
         distance(myX, myY, nearby.x, nearby.y) <= ATTACK_TRIGGER_DIST
@@ -233,7 +249,13 @@ export class BotBrain {
       const shouldBomb =
         self.tmode || this.ticksInState > PATROL_BOMB_IDLE_TICKS;
       if (shouldBomb) {
-        const enemyPlanet = nearestEnemyPlanet(myX, myY, this.team, planets);
+        const enemyPlanet = nearestEnemyPlanet(
+          myX,
+          myY,
+          this.team,
+          planets,
+          this.enemyTeam,
+        );
         if (
           enemyPlanet !== null &&
           enemyPlanet.armies >= BOMB_WORTHWHILE_ARMIES
@@ -475,7 +497,13 @@ export class BotBrain {
       target.team === this.team ||
       target.armies < BOMB_WORTHWHILE_ARMIES
     ) {
-      const newTarget = nearestEnemyPlanet(myX, myY, this.team, planets);
+      const newTarget = nearestEnemyPlanet(
+        myX,
+        myY,
+        this.team,
+        planets,
+        this.enemyTeam,
+      );
       if (newTarget && newTarget.armies >= BOMB_WORTHWHILE_ARMIES) {
         this.bombTargetPlanetId = newTarget.planetId;
         target = newTarget;
@@ -532,7 +560,14 @@ export class BotBrain {
     }
 
     // Check for enemy threatening the defended planet
-    const enemy = nearestEnemyShip(myX, myY, this.team, this.slot, ships);
+    const enemy = nearestEnemyShip(
+      myX,
+      myY,
+      this.team,
+      this.slot,
+      ships,
+      this.enemyTeam,
+    );
     if (enemy !== null) {
       const distEnemyToPlanet = distance(enemy.x, enemy.y, planet.x, planet.y);
       if (distEnemyToPlanet <= DEFEND_ENGAGE_DIST) {
@@ -595,7 +630,14 @@ export class BotBrain {
     }
 
     // Intercept enemies threatening the escort target
-    const enemy = nearestEnemyShip(myX, myY, this.team, this.slot, ships);
+    const enemy = nearestEnemyShip(
+      myX,
+      myY,
+      this.team,
+      this.slot,
+      ships,
+      this.enemyTeam,
+    );
     if (enemy !== null) {
       const distEnemyToTarget = distance(enemy.x, enemy.y, target.x, target.y);
       if (distEnemyToTarget <= ESCORT_ENGAGE_DIST) {

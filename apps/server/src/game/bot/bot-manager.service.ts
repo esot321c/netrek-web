@@ -275,18 +275,29 @@ export class BotManagerService {
 
     const tick = this.gameState.currentTick;
 
-    // Respawn dead bots
+    // Respawn dead bots — collect first, then mutate to avoid
+    // modifying the map while iterating
+    const deadBots: {
+      slot: number;
+      team: Team;
+      difficulty: BotDifficulty;
+      shipType: ShipType;
+    }[] = [];
     for (const [slot, bot] of this.bots) {
       const ship = this.gameState.ships[slot];
       if (!ship) continue;
-
       if (ship.status === ShipStatus.DEAD) {
-        // Remove then respawn the bot at same team/difficulty
-        const team = bot.team;
-        const difficulty = bot.difficulty;
-        this.bots.delete(slot);
-        this.spawnBot(team, difficulty, bot.shipType);
+        deadBots.push({
+          slot,
+          team: bot.team,
+          difficulty: bot.difficulty,
+          shipType: bot.shipType,
+        });
       }
+    }
+    for (const dead of deadBots) {
+      this.removeBot(dead.slot);
+      this.spawnBot(dead.team, dead.difficulty, dead.shipType);
     }
 
     // Run bot AI for each alive bot
