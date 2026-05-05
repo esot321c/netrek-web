@@ -24,7 +24,7 @@ Split the current monolithic `apps/server` into two independent apps: a central 
 ```
 
 - **Backend** (`apps/backend`): NestJS. Owns PostgreSQL + Redis. Handles auth (Google OAuth, JWT sessions), user accounts, server registry, lobby/server browser API, stats storage, and match history. This is the central authority.
-- **Game Server** (`apps/server`): NestJS (lighter). Runs the game loop, bot manager, and WebSocket gateway. No database — game state is entirely in-memory. Communicates with the backend via REST: registers on startup, heartbeats periodically, pushes stat updates, reports match results. Validates player connections using short-lived JWTs (shared signing secret with backend).
+- **Game Server** (`apps/server`): NestJS (lighter). Runs the game loop, bot manager, and WebSocket gateway. No database — game state is entirely in-memory. Communicates with the backend via REST: registers on startup, heartbeats periodically, pushes stat updates, reports match results. Validates player connections using short-lived JWTs (asymmetric verification — backend signs with private key, game server verifies with public key).
 - **Client** (`apps/client`): Next.js. Talks to the backend for auth, lobby browsing, and server info. Connects directly to a game server's WebSocket for gameplay.
 - **Shared** (`packages/shared`): Game constants, types, physics, protocol. Imported by all three.
 
@@ -53,18 +53,18 @@ Split the current monolithic `apps/server` into two independent apps: a central 
 
 ### Registration Flow
 
-1. Authenticated user calls backend: `POST /v1/servers` with `{ name, region, maxPlayers }`.
-2. Backend creates a `GameServer` record, generates a **server token** (random 256-bit key, stored hashed).
+1. Authenticated user calls backend: `POST /v1/servers` with `{ name, region, maxPlayers, host }`. The `host` field is the public WebSocket URL (e.g. `wss://my-server.example.com:3013`) and is locked at registration time — it cannot be changed via heartbeat.
+2. Backend creates a `GameServer` record, generates a **server token** (random 256-bit key, stored hashed). Per-user limit: 5 server registrations per account.
 3. Backend returns the server ID + plaintext server token (shown once).
 4. User configures the game server binary with: backend URL, server ID, server token.
-5. On startup, game server calls `POST /v1/servers/:id/heartbeat` with its public WebSocket URL, current player count, game phase, and team composition.
+5. On startup, game server calls `POST /v1/servers/:id/heartbeat` with current player count, game phase, and team composition.
 6. Heartbeat repeats every 30 seconds. If backend receives no heartbeat for 90 seconds, server is marked offline.
+7. To change the host URL, the owner calls `PATCH /v1/servers/:id` with `{ host }` (authenticated, owner-only).
 
 ### Heartbeat Payload
 
 ```typescript
 {
-  host: string; // Public WebSocket URL (e.g. "wss://us-east.netrek.example.com")
   playerCount: number; // Current human players
   botCount: number; // Current bots
   maxPlayers: number; // Server capacity
@@ -125,11 +125,11 @@ An admin calls `PATCH /v1/servers/:id` with `{ isOfficial: true }`. Same registr
 
 7. Backend returns `{ gameToken, wsUrl }` (the server's WebSocket address).
 8. Client connects to the game server's WebSocket with the game token in the handshake (`auth` field or query param).
-9. Game server validates the JWT locally (shared signing secret), checks expiry, extracts player info, slots them into the game.
+9. Game server validates the JWT locally using the public key (asymmetric verification), checks expiry, extracts player info, slots them into the game.
 
 ### Token Validation on Game Server
 
-The game server validates game tokens using the same JWT secret as the backend. No network round-trip needed. The game server only needs the secret — it never calls the backend during player connection.
+The backend signs game tokens with an asymmetric key pair (RS256 or ES256). The backend holds the private key; game servers only receive the public key. This means game servers can verify tokens but cannot forge them — community server hosts cannot mint fake player identities. No network round-trip needed for validation.
 
 ### Disconnect / Reconnect
 
@@ -226,7 +226,7 @@ model GameServer {
   ownerId         String
   owner           User     @relation(fields: [ownerId], references: [id])
   region          String   @default("us-east")
-  host            String?  // WebSocket URL, set by heartbeat
+  host            String   // WebSocket URL, set at registration, owner-editable only
   maxPlayers      Int      @default(16)
   isOfficial      Boolean  @default(false)
   serverTokenHash String
@@ -383,7 +383,7 @@ CORS_ORIGIN=http://localhost:3011
 API_PORT=3012
 
 # New
-GAME_TOKEN_SECRET=<shared-secret-for-game-tokens>
+GAME_TOKEN_PRIVATE_KEY=<path-or-PEM-private-key-for-signing-game-tokens>
 GAME_TOKEN_TTL=30s
 SERVER_HEARTBEAT_TIMEOUT=90
 ```
@@ -395,7 +395,7 @@ SERVER_HEARTBEAT_TIMEOUT=90
 BACKEND_URL=http://localhost:3012/v1
 SERVER_ID=<uuid-from-registration>
 SERVER_TOKEN=<token-from-registration>
-GAME_TOKEN_SECRET=<same-shared-secret>
+GAME_TOKEN_PUBLIC_KEY=<path-or-PEM-public-key-for-verifying-game-tokens>
 WS_PORT=3013
 PUBLIC_WS_URL=ws://localhost:3013
 
