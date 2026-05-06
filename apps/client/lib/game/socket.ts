@@ -4,6 +4,9 @@ import {
   serializeInput,
   InputCommand,
   type ClientGameState,
+  type ChatMessage,
+  type KillEvent,
+  type RosterMap,
 } from "@netrek/shared";
 
 // ---------------------------------------------------------------------------
@@ -15,6 +18,9 @@ let stateCallback: ((state: ClientGameState) => void) | null = null;
 let connectCallback: (() => void) | null = null;
 let disconnectCallback: (() => void) | null = null;
 let joinedCallback: ((data: { slot: number }) => void) | null = null;
+let chatCallback: ((msg: ChatMessage) => void) | null = null;
+let killCallback: ((event: KillEvent) => void) | null = null;
+let rosterCallback: ((roster: RosterMap) => void) | null = null;
 
 export function getSocket(): Socket | null {
   return socket;
@@ -49,6 +55,18 @@ export function connect(wsUrl: string, gameToken: string): Socket {
     joinedCallback?.(data);
   });
 
+  socket.on("chat", (msg: ChatMessage) => {
+    chatCallback?.(msg);
+  });
+
+  socket.on("kill", (event: KillEvent) => {
+    killCallback?.(event);
+  });
+
+  socket.on("roster", (roster: RosterMap) => {
+    rosterCallback?.(roster);
+  });
+
   return socket;
 }
 
@@ -79,6 +97,18 @@ export function onJoined(cb: (data: { slot: number }) => void): void {
   joinedCallback = cb;
 }
 
+export function onChat(cb: (msg: ChatMessage) => void): void {
+  chatCallback = cb;
+}
+
+export function onKill(cb: (event: KillEvent) => void): void {
+  killCallback = cb;
+}
+
+export function onRoster(cb: (roster: RosterMap) => void): void {
+  rosterCallback = cb;
+}
+
 // ---------------------------------------------------------------------------
 // Commands (sent to server)
 // ---------------------------------------------------------------------------
@@ -92,4 +122,13 @@ export function sendInput(command: InputCommand, value: number): void {
 export function sendRespawn(shipType: number): void {
   if (!socket) return;
   socket.emit("respawn", { shipType });
+}
+
+export function sendChat(
+  text: string,
+  team: number,
+  targetSlot?: number,
+): void {
+  if (!socket) return;
+  socket.emit("chat", { text, team, targetSlot });
 }
