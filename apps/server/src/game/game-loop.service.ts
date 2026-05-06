@@ -35,7 +35,6 @@ import {
   BOMB_INTERVAL,
   BEAM_MIN_ARMIES,
   BEAM_INTERVAL,
-  CLOAK_FUEL_PER_TICK,
   UNCLOAK_TICKS,
   TRACTOR_FUEL_PER_TICK,
   TRACTOR_ENGINE_HEAT,
@@ -80,6 +79,7 @@ import {
   LockType,
   MAX_PLAYERS,
   Team,
+  type KillEvent,
 } from "@netrek/shared";
 import { GameService } from "./game.service";
 import { BotManagerService } from "./bot";
@@ -88,6 +88,7 @@ import { loadBotConfig, type BotConfig } from "./bot/bot-config";
 export const GAME_TICK_EVENT = "game.tick";
 export const GAME_WIN_EVENT = "game.win";
 export const GAME_RESET_EVENT = "game.reset";
+export const GAME_KILL_EVENT = "game.kill";
 
 @Injectable()
 export class GameLoopService implements OnModuleInit, OnModuleDestroy {
@@ -567,11 +568,11 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
       const roll = Math.random();
       let destroyed: number;
       if (ship.shipType === ShipType.AS) {
-        // AS: 0 (50%), 2 (30%), 3 (10%), 4 (10%)
-        if (roll < 0.5) destroyed = 0;
-        else if (roll < 0.8) destroyed = 2;
-        else if (roll < 0.9) destroyed = 3;
-        else destroyed = 4;
+        // AS always bombs at least 2: 2 (50%), 3 (30%), 4 (10%), 5 (10%)
+        if (roll < 0.5) destroyed = 2;
+        else if (roll < 0.8) destroyed = 3;
+        else if (roll < 0.9) destroyed = 4;
+        else destroyed = 5;
       } else {
         // Normal: 0 (50%), 1 (30%), 2 (10%), 3 (10%)
         if (roll < 0.5) destroyed = 0;
@@ -581,9 +582,12 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
       }
 
       if (destroyed > 0) {
-        const actual = Math.min(destroyed, planet.armies);
-        planet.armies -= actual;
-        ship.kills += actual * KILLS_PER_BOMB;
+        const floor = BOMB_MIN_ARMIES - 1; // Can't bomb below 4
+        const actual = Math.min(destroyed, planet.armies - floor);
+        if (actual > 0) {
+          planet.armies -= actual;
+          ship.kills += actual * KILLS_PER_BOMB;
+        }
       }
     }
   }
@@ -744,9 +748,10 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
         ship.uncloakTicks--;
       }
 
-      // Cloak fuel cost
+      // Cloak fuel cost (AS burns half as much)
       if (ship.cloaked) {
-        ship.fuel -= CLOAK_FUEL_PER_TICK;
+        const stats = SHIP_STATS[ship.shipType];
+        ship.fuel -= stats.cloakFuelPerTick;
         if (ship.fuel <= 0) {
           ship.fuel = 0;
           ship.cloaked = false;
@@ -1286,7 +1291,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
       }
       updateFuel(ship);
 
-      // Repair — apply orbit bonus
+      // Repair — orbit bonus is always +repair*4 in thousandths, independent of repair mode
       if (ship.orbitPlanetId >= 0) {
         const planet = planets[ship.orbitPlanetId];
         if (
@@ -1294,22 +1299,18 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
           planet.team === ship.team &&
           planet.features & PlanetFeature.REPAIR
         ) {
-          // Orbiting friendly repair planet: 4x rate (standard is 1x, add 3x more)
           const stats = SHIP_STATS[ship.shipType];
-          const repairMultiplier = ship.repairMode ? 2 : 1;
-          // Additional 3x on top of the standard 1x
+          const shieldGain =
+            (stats.shieldRepairRate * 4 * stats.maxShields) / 1000;
+          const hullGain = (stats.hullRepairRate * 4 * stats.maxHull) / 1000;
           if (ship.shieldStrength < stats.maxShields) {
             ship.shieldStrength = Math.min(
               stats.maxShields,
-              ship.shieldStrength +
-                stats.shieldRepairRate * repairMultiplier * 3,
+              ship.shieldStrength + shieldGain,
             );
           }
           if (!ship.shieldsUp && ship.hullDamage > 0) {
-            ship.hullDamage = Math.max(
-              0,
-              ship.hullDamage - stats.hullRepairRate * repairMultiplier * 3,
-            );
+            ship.hullDamage = Math.max(0, ship.hullDamage - hullGain);
           }
         }
       }
@@ -1341,6 +1342,21 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
 
         // Ship dies
         ship.status = ShipStatus.EXPLODING;
+        const armiesLost = ship.armies;
+        const killerSlot = ship.lastDamagedBySlot;
+        const killerShip = killerSlot >= 0 ? ships[killerSlot] : undefined;
+        this.eventEmitter.emit(GAME_KILL_EVENT, {
+          killerSlot: killerSlot,
+          killerName: killerShip?.playerId ?? "",
+          killerShipType: killerShip?.shipType ?? 0,
+          killerTeam: killerShip?.team ?? 0,
+          victimSlot: ship.slotIndex,
+          victimName: ship.playerId,
+          victimShipType: ship.shipType,
+          victimTeam: ship.team,
+          armiesLost,
+          tick: state.currentTick,
+        } satisfies KillEvent);
         ship.explodeTicks = EXPLOSION_DURATION_TICKS;
         ship.speed = 0;
         ship.desiredSpeed = 0;
@@ -1450,11 +1466,11 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
   // -------------------------------------------------------------------------
 
   private updateTMode(ships: ShipState[]): void {
-    // Count alive players per team
+    // Count all players per team (dead players still count — they'll respawn)
     const teamCounts = [0, 0, 0, 0];
     for (let i = 0; i < ships.length; i++) {
       const ship = ships[i]!;
-      if (ship.status === ShipStatus.DEAD || !ship.playerId) continue;
+      if (!ship.playerId) continue;
       teamCounts[ship.team] = (teamCounts[ship.team] ?? 0) + 1;
     }
 

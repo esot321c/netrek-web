@@ -5,12 +5,14 @@ import {
   serializeGameState,
   type RosterEntry,
   type RosterMap,
+  type KillEvent,
 } from "@netrek/shared";
 import { GameService } from "./game.service";
 import {
   GameLoopService,
   GAME_TICK_EVENT,
   GAME_WIN_EVENT,
+  GAME_KILL_EVENT,
 } from "./game-loop.service";
 
 interface ConnectedPlayer {
@@ -106,6 +108,25 @@ export class GameBroadcastService {
   }): void {
     for (const player of this.players.values()) {
       player.socket.emit("game_win", data);
+    }
+  }
+
+  @OnEvent(GAME_KILL_EVENT)
+  handleKill(event: KillEvent): void {
+    const killerPlayer =
+      event.killerSlot >= 0
+        ? this.getPlayerBySlot(event.killerSlot)
+        : undefined;
+    const victimPlayer = this.getPlayerBySlot(event.victimSlot);
+
+    const resolved: KillEvent = {
+      ...event,
+      killerName: killerPlayer?.username ?? event.killerName,
+      victimName: victimPlayer?.username ?? event.victimName,
+    };
+
+    for (const player of this.players.values()) {
+      player.socket.emit("kill", resolved);
     }
   }
 
