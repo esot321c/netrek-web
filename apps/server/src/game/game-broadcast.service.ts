@@ -27,6 +27,7 @@ export class GameBroadcastService {
   private readonly logger = new Logger(GameBroadcastService.name);
   private server: Server | null = null;
   private readonly players = new Map<string, ConnectedPlayer>();
+  private readonly botNames = new Map<number, string>();
 
   constructor(
     private readonly gameService: GameService,
@@ -80,6 +81,7 @@ export class GameBroadcastService {
   getRoster(): RosterMap {
     const roster: RosterMap = {};
     const state = this.gameService.state;
+
     for (const player of this.players.values()) {
       const ship = state.ships[player.slot];
       if (ship && ship.playerId) {
@@ -90,7 +92,27 @@ export class GameBroadcastService {
         };
       }
     }
+
+    for (const [slot, name] of this.botNames) {
+      const ship = state.ships[slot];
+      if (ship && ship.playerId) {
+        roster[slot] = {
+          name,
+          team: ship.team,
+          shipType: ship.shipType,
+        };
+      }
+    }
+
     return roster;
+  }
+
+  setBotName(slot: number, name: string): void {
+    this.botNames.set(slot, name);
+  }
+
+  removeBotName(slot: number): void {
+    this.botNames.delete(slot);
   }
 
   broadcastRoster(): void {
@@ -121,8 +143,14 @@ export class GameBroadcastService {
 
     const resolved: KillEvent = {
       ...event,
-      killerName: killerPlayer?.username ?? event.killerName,
-      victimName: victimPlayer?.username ?? event.victimName,
+      killerName:
+        killerPlayer?.username ??
+        this.botNames.get(event.killerSlot) ??
+        event.killerName,
+      victimName:
+        victimPlayer?.username ??
+        this.botNames.get(event.victimSlot) ??
+        event.victimName,
     };
 
     for (const player of this.players.values()) {

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { OnEvent } from "@nestjs/event-emitter";
+import { GameBroadcastService } from "../game-broadcast.service";
 import {
   Team,
   ShipType,
@@ -53,7 +54,7 @@ export class BotManagerService {
   private tmode = false;
   private lastRebalanceTick = 0;
 
-  constructor() {
+  constructor(private readonly broadcastService: GameBroadcastService) {
     this.config = loadBotConfig();
   }
 
@@ -139,6 +140,8 @@ export class BotManagerService {
     );
 
     this.bots.set(slot, bot);
+    this.broadcastService.setBotName(slot, bot.name);
+    this.broadcastService.broadcastRoster();
 
     this.logger.debug(
       `Spawned bot ${name} (${BotDifficulty[difficulty]}) on team ${Team[team]}, slot ${slot}`,
@@ -153,6 +156,8 @@ export class BotManagerService {
 
     this.gameState.clearShip(slot);
     this.bots.delete(slot);
+    this.broadcastService.removeBotName(slot);
+    this.broadcastService.broadcastRoster();
 
     this.logger.debug(`Removed bot ${bot.name} from slot ${slot}`);
   }
