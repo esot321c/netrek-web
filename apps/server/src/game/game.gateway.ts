@@ -87,10 +87,17 @@ export class GameGateway
     client.data["slot"] = slot;
     client.data["payload"] = payload;
 
-    this.broadcastService.addPlayer(client.id, client, slot, payload.sub);
+    this.broadcastService.addPlayer(
+      client.id,
+      client,
+      slot,
+      payload.sub,
+      payload.username,
+    );
     this.botManager.onHumanJoin(payload.team as Team);
 
     client.emit("joined", { slot });
+    this.broadcastService.broadcastRoster();
     this.logger.log(
       `Player ${payload.username} joined slot ${slot} (team ${payload.team})`,
     );
@@ -105,6 +112,7 @@ export class GameGateway
         this.botManager.onHumanLeave(team);
       }
       this.logger.log(`Player disconnected from slot ${player.slot}`);
+      this.broadcastService.broadcastRoster();
     }
   }
 
@@ -152,7 +160,7 @@ export class GameGateway
   @SubscribeMessage("chat")
   handleChat(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { text: string; team: number },
+    @MessageBody() data: { text: string; team: number; targetSlot?: number },
   ): void {
     const player = this.broadcastService.getPlayerBySocketId(client.id);
     if (!player) return;
@@ -162,17 +170,30 @@ export class GameGateway
 
     const message: ChatMessage = {
       senderSlot: player.slot,
-      senderName: player.userId,
+      senderName: player.username,
       team: data.team,
       text: data.text,
       tick: this.gameService.state.currentTick,
+      targetSlot: data.targetSlot,
     };
 
     if (this.server) {
-      for (const p of this.broadcastService.getAllPlayers()) {
-        const pShip = this.gameService.state.ships[p.slot];
-        if (data.team === -1 || (pShip && pShip.team === data.team)) {
-          p.socket.emit("chat", message);
+      if (data.targetSlot !== undefined && data.targetSlot >= 0) {
+        const recipient = this.broadcastService.getPlayerBySlot(
+          data.targetSlot,
+        );
+        if (recipient) {
+          recipient.socket.emit("chat", message);
+        }
+        if (player.slot !== data.targetSlot) {
+          player.socket.emit("chat", message);
+        }
+      } else {
+        for (const p of this.broadcastService.getAllPlayers()) {
+          const pShip = this.gameService.state.ships[p.slot];
+          if (data.team === -1 || (pShip && pShip.team === data.team)) {
+            p.socket.emit("chat", message);
+          }
         }
       }
     }
