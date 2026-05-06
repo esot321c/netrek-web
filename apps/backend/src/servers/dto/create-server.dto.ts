@@ -8,7 +8,7 @@ export class CreateServerDto {
   @IsOptional()
   region?: string;
 
-  @IsUrl()
+  @IsUrl({ require_tld: false })
   host!: string;
 
   @IsInt()

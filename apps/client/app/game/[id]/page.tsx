@@ -1,26 +1,21 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useState } from "react";
 import GameCanvas from "@/components/game-canvas";
 
+function readAndClearCreds(
+  id: string,
+): { gameToken: string; wsUrl: string } | null {
+  const raw = sessionStorage.getItem(`game:${id}`);
+  if (!raw) return null;
+  sessionStorage.removeItem(`game:${id}`);
+  return JSON.parse(raw);
+}
+
 function GamePageInner({ id }: { id: string }) {
-  const [creds, setCreds] = useState<{
-    gameToken: string;
-    wsUrl: string;
-  } | null>(null);
-  const [missing, setMissing] = useState(false);
+  const [creds] = useState(() => readAndClearCreds(id));
 
-  useEffect(() => {
-    const raw = sessionStorage.getItem(`game:${id}`);
-    if (!raw) {
-      setMissing(true);
-      return;
-    }
-    sessionStorage.removeItem(`game:${id}`);
-    setCreds(JSON.parse(raw));
-  }, [id]);
-
-  if (missing) {
+  if (!creds) {
     return (
       <div
         style={{
@@ -49,8 +44,6 @@ function GamePageInner({ id }: { id: string }) {
       </div>
     );
   }
-
-  if (!creds) return null;
 
   return <GameCanvas wsUrl={creds.wsUrl} gameToken={creds.gameToken} />;
 }

@@ -17,7 +17,7 @@ export class UpdateServerDto {
   @IsOptional()
   region?: string;
 
-  @IsUrl()
+  @IsUrl({ require_tld: false })
   @IsOptional()
   host?: string;
 

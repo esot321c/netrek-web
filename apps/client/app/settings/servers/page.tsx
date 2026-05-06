@@ -38,8 +38,11 @@ export default function ServersSettingsPage() {
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // One-time token reveal after creation
-  const [newToken, setNewToken] = useState<string | null>(null);
+  // One-time credential reveal after creation/rotation
+  const [newCreds, setNewCreds] = useState<{
+    id?: string;
+    token: string;
+  } | null>(null);
 
   // Per-server action states
   const [actionStates, setActionStates] = useState<
@@ -71,18 +74,21 @@ export default function ServersSettingsPage() {
     e.preventDefault();
     setFormSubmitting(true);
     setFormError(null);
-    setNewToken(null);
+    setNewCreds(null);
     try {
-      const result = await apiFetch<{ serverToken: string }>("/servers", {
-        method: "POST",
-        body: JSON.stringify({
-          name: formName,
-          host: formHost,
-          region: formRegion,
-          maxPlayers: formMaxPlayers,
-        }),
-      });
-      setNewToken(result.serverToken);
+      const result = await apiFetch<{ id: string; serverToken: string }>(
+        "/servers",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            name: formName,
+            host: formHost,
+            region: formRegion,
+            maxPlayers: formMaxPlayers,
+          }),
+        },
+      );
+      setNewCreds({ id: result.id, token: result.serverToken });
       setFormName("");
       setFormHost("");
       setFormRegion(REGIONS[0] ?? "us-east");
@@ -105,7 +111,7 @@ export default function ServersSettingsPage() {
         `/servers/${serverId}/rotate-token`,
         { method: "POST" },
       );
-      setNewToken(result.serverToken);
+      setNewCreds({ token: result.serverToken });
     } catch (e) {
       setActionStates((prev) => ({
         ...prev,
@@ -164,20 +170,32 @@ export default function ServersSettingsPage() {
           lobby.
         </p>
 
-        {/* Token reveal (one-time) */}
-        {newToken && (
+        {/* Credential reveal (one-time) */}
+        {newCreds && (
           <div className="mb-8 rounded border border-yellow-600 bg-yellow-900/20 px-4 py-4">
             <div className="text-sm font-semibold text-yellow-400 mb-2">
-              Server token (shown once — save it now)
+              Server credentials (shown once — save them now)
             </div>
-            <code className="block break-all rounded bg-gray-900 px-3 py-2 text-xs text-green-400 font-mono">
-              {newToken}
-            </code>
+            {newCreds.id && (
+              <div className="mb-2">
+                <div className="text-xs text-gray-400 mb-1">SERVER_ID</div>
+                <code className="block break-all rounded bg-gray-900 px-3 py-2 text-xs text-green-400 font-mono">
+                  {newCreds.id}
+                </code>
+              </div>
+            )}
+            <div>
+              <div className="text-xs text-gray-400 mb-1">SERVER_TOKEN</div>
+              <code className="block break-all rounded bg-gray-900 px-3 py-2 text-xs text-green-400 font-mono">
+                {newCreds.token}
+              </code>
+            </div>
             <p className="text-xs text-gray-500 mt-2">
-              Configure your server with this token. It will not be shown again.
+              Add these to your game server&apos;s .env file. The token will not
+              be shown again.
             </p>
             <button
-              onClick={() => setNewToken(null)}
+              onClick={() => setNewCreds(null)}
               className="mt-3 text-xs text-gray-500 underline hover:text-gray-400"
             >
               Dismiss
