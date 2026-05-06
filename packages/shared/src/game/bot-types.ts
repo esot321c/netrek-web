@@ -20,4 +20,5 @@ export interface ChatMessage {
   team: number; // Team enum, -1 for all-chat
   text: string;
   tick: number;
+  targetSlot?: number; // for personal messages
 }
