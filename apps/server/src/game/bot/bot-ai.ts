@@ -518,6 +518,9 @@ export class BotBrain {
     if (dist <= ORBIT_DIST) {
       inputs.push({ command: InputCommand.ORBIT, value: 0, tick });
       inputs.push({ command: InputCommand.SET_SPEED, value: 0, tick });
+      if (mySelf.shieldsUp) {
+        inputs.push({ command: InputCommand.SHIELD_TOGGLE, value: 0, tick });
+      }
       inputs.push({ command: InputCommand.BOMB, value: 1, tick });
 
       // Veteran cloaks while bombing if fuel is sufficient
