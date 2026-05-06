@@ -1,6 +1,20 @@
 import { InputCommand, LockType, ShipStatus } from "@netrek/shared";
-import { sendInput } from "./socket";
+import { sendInput, sendChat } from "./socket";
 import { getMySlot, getLatestSnapshot } from "./state";
+import {
+  TypingState,
+  getTypingState,
+  startMessage,
+  startMacroMode,
+  selectDestination,
+  appendChar,
+  deleteChar,
+  getFinishedMessage,
+  cancelTyping,
+  getRoster,
+  type ChatDest,
+} from "./chat";
+import { loadMacros, expandMacro } from "./macros";
 
 // ---------------------------------------------------------------------------
 // Input capture — keyboard + mouse
@@ -12,6 +26,18 @@ let viewportCenterY = 0;
 let viewportScale = 1; // pixels per game unit
 let lastMouseX = 0; // last known mouse position (client pixels)
 let lastMouseY = 0;
+
+let chatChangeCallback: (() => void) | null = null;
+
+export function onChatChange(cb: () => void): void {
+  chatChangeCallback = cb;
+}
+
+function notifyChatChange(): void {
+  chatChangeCallback?.();
+}
+
+let macroPendingText: string | null = null;
 
 // Called by the renderer each frame so input knows the current viewport
 export function updateViewport(
@@ -167,9 +193,47 @@ function handleMouseDown(e: MouseEvent): void {
 }
 
 function handleKeyDown(e: KeyboardEvent): void {
+  const typing = getTypingState();
+
+  // --- Typing mode: route keys to chat buffer ---
+  if (typing === TypingState.DEST_PROMPT) {
+    e.preventDefault();
+    handleDestKey(e.key);
+    notifyChatChange();
+    return;
+  }
+
+  if (typing === TypingState.MACRO_WAIT) {
+    e.preventDefault();
+    handleMacroKey(e.key);
+    notifyChatChange();
+    return;
+  }
+
+  if (typing === TypingState.TYPING) {
+    e.preventDefault();
+    handleTypingKey(e);
+    notifyChatChange();
+    return;
+  }
+
+  // --- IDLE: normal game input ---
   if (getMySlot() < 0) return;
-  // Ignore modified keys (Ctrl+, Alt+, Meta+) — let browser handle those
   if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+  // Chat keys (intercept before game keys)
+  if (e.key === "m") {
+    e.preventDefault();
+    startMessage();
+    notifyChatChange();
+    return;
+  }
+  if (e.key === "X") {
+    e.preventDefault();
+    startMacroMode();
+    notifyChatChange();
+    return;
+  }
 
   // Number keys 0-9 set warp speed
   if (e.key >= "0" && e.key <= "9") {
@@ -244,6 +308,119 @@ function handleKeyDown(e: KeyboardEvent): void {
     case "l":
       e.preventDefault();
       lockNearestEntity();
+      break;
+  }
+}
+
+function handleDestKey(key: string): void {
+  if (key === "Escape") {
+    macroPendingText = null;
+    cancelTyping();
+    return;
+  }
+
+  let dest: ChatDest | null = null;
+
+  if (key === "T" || key === "t") {
+    const snap = getLatestSnapshot();
+    const myShip = snap?.ships.find((s) => s.slotIndex === getMySlot());
+    if (myShip) {
+      dest = { type: "team", team: myShip.team };
+    }
+  } else if (key === "A" || key === "a") {
+    dest = { type: "all" };
+  } else {
+    const slotNum = parseInt(key, 16);
+    if (!isNaN(slotNum) && slotNum >= 0 && slotNum <= 15) {
+      dest = { type: "personal", targetSlot: slotNum };
+    }
+  }
+
+  if (!dest) return;
+
+  if (macroPendingText) {
+    sendChatFromDest(macroPendingText, dest);
+    macroPendingText = null;
+    cancelTyping();
+  } else {
+    selectDestination(dest);
+  }
+}
+
+function handleMacroKey(key: string): void {
+  if (key === "Escape") {
+    cancelTyping();
+    return;
+  }
+
+  const macros = loadMacros();
+  const macro = macros[key];
+  if (!macro) {
+    cancelTyping();
+    return;
+  }
+
+  const snap = getLatestSnapshot();
+  if (!snap) {
+    cancelTyping();
+    return;
+  }
+
+  const expanded = expandMacro(macro.text, snap, getMySlot(), getRoster());
+
+  if (macro.dest === "T") {
+    const myShip = snap.ships.find((s) => s.slotIndex === getMySlot());
+    if (myShip) {
+      sendChat(expanded, myShip.team);
+    }
+  } else if (macro.dest === "A") {
+    sendChat(expanded, -1);
+  } else {
+    macroPendingText = expanded;
+    startMessage();
+    return;
+  }
+
+  cancelTyping();
+}
+
+function handleTypingKey(e: KeyboardEvent): void {
+  if (e.key === "Escape") {
+    macroPendingText = null;
+    cancelTyping();
+    return;
+  }
+
+  if (e.key === "Enter") {
+    const msg = getFinishedMessage();
+    if (msg) {
+      sendChatFromDest(msg.text, msg.dest);
+    }
+    macroPendingText = null;
+    cancelTyping();
+    return;
+  }
+
+  if (e.key === "Backspace") {
+    deleteChar();
+    return;
+  }
+
+  if (e.key.length === 1) {
+    appendChar(e.key);
+  }
+}
+
+function sendChatFromDest(text: string, dest: ChatDest): void {
+  switch (dest.type) {
+    case "team":
+      sendChat(text, dest.team);
+      break;
+    case "all":
+      sendChat(text, -1);
+      break;
+    case "personal":
+      sendChat(text, -1, dest.targetSlot);
       break;
   }
 }
