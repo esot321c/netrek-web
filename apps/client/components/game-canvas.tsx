@@ -282,9 +282,31 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
               <div style={{ color: "#ffff00", marginTop: 8, marginBottom: 4 }}>
                 Windows
               </div>
-              <HelpRow k="L" desc="Toggle player list" />
               <HelpRow k="i" desc="Info on nearest entity" />
               <HelpRow k="h" desc="Toggle this help" />
+              <div style={{ color: "#ffff00", marginTop: 8, marginBottom: 4 }}>
+                Chat & Macros
+              </div>
+              <HelpRow k="m" desc="Start sending message" />
+              <HelpRow k="X + key" desc="Fire macro" />
+              <div style={{ color: "#555", marginTop: 8 }}>
+                Full docs:{" "}
+                <a
+                  href="/docs/keymap"
+                  target="_blank"
+                  style={{ color: "#44ffff" }}
+                >
+                  /docs/keymap
+                </a>
+                {" | "}
+                <a
+                  href="/docs/macros"
+                  target="_blank"
+                  style={{ color: "#44ffff" }}
+                >
+                  /docs/macros
+                </a>
+              </div>
               <div style={{ color: "#555", marginTop: 8 }}>
                 Press h to close
               </div>
