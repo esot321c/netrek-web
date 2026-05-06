@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { ShipType, ShipStatus, Team } from "@netrek/shared";
+import { ShipType, Team } from "@netrek/shared";
 import {
   connect,
   disconnect,
@@ -9,6 +9,9 @@ import {
   onConnect,
   onDisconnect,
   onJoined,
+  onChat,
+  onKill,
+  onRoster,
   sendRespawn,
 } from "@/lib/game/socket";
 import {
@@ -18,7 +21,7 @@ import {
   getLatestSnapshot,
   resetState,
 } from "@/lib/game/state";
-import { setupInput } from "@/lib/game/input";
+import { setupInput, onChatChange } from "@/lib/game/input";
 import { initRenderer, renderFrame } from "@/lib/game/renderer";
 import {
   initSound,
@@ -26,6 +29,16 @@ import {
   processSounds,
   resetSound,
 } from "@/lib/game/sound";
+import {
+  handleChatMessage,
+  handleKillEvent,
+  updateRoster,
+  resetChat,
+  getTypingState,
+  TypingState,
+} from "@/lib/game/chat";
+import ChatPanel from "./chat-panel";
+import PlayerListPanel from "./player-list-panel";
 
 // Ship type labels
 const SHIPS = [
@@ -58,7 +71,7 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
   const rafRef = useRef<number>(0);
   const [connected, setConnected] = useState(false);
   const [phase, setPhase] = useState<"waiting" | "playing" | "dead">("waiting");
-  const [showPlayerList, setShowPlayerList] = useState(true);
+  const [chatVersion, setChatVersion] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
   const [infoTarget, setInfoTarget] = useState<string | null>(null);
 
@@ -120,12 +133,29 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
       setPhase("playing");
     });
 
+    onChat((msg) => {
+      handleChatMessage(msg, getMySlot());
+      setChatVersion((v) => v + 1);
+    });
+
+    onKill((event) => {
+      handleKillEvent(event);
+      setChatVersion((v) => v + 1);
+    });
+
+    onRoster((roster) => {
+      updateRoster(roster);
+      setChatVersion((v) => v + 1);
+    });
+
+    onChatChange(() => {
+      setChatVersion((v) => v + 1);
+    });
+
     // Keyboard shortcuts for panels
     function handlePanelKeys(e: KeyboardEvent) {
       if (e.ctrlKey || e.altKey || e.metaKey) return;
-      if (e.key === "L") {
-        setShowPlayerList((v) => !v);
-      }
+      if (getTypingState() !== TypingState.IDLE) return;
       if (e.key === "h") {
         setShowHelp((v) => !v);
       }
@@ -153,6 +183,7 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
       disconnect();
       resetState();
       resetSound();
+      resetChat();
     };
   }, [handleResize, wsUrl, gameToken]);
 
@@ -328,75 +359,21 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
               aspectRatio: "1",
             }}
           />
-
-          {/* Player list (toggled with L key) */}
-          {showPlayerList && snapshot && <PlayerList state={snapshot} />}
         </div>
       </div>
 
-      {/* Bottom panel: chat area */}
+      {/* Bottom panel: player list (left) + chat (right) */}
       <div
         style={{
           height: BOTTOM_PANEL_H,
           borderTop: "1px solid #333",
           background: "#000000",
           display: "flex",
-          fontFamily: "monospace",
-          fontSize: 12,
-          color: "#aaa",
         }}
       >
-        <div style={{ flex: 1, padding: 6, overflowY: "auto" }}>
-          <div style={{ color: "#555" }}>-- Chat (not yet implemented) --</div>
-          <div style={{ color: "#555", marginTop: 4 }}>
-            L: player list | i: info | h: help
-          </div>
-          <div style={{ color: "#555" }}>
-            Left: torps | Shift+Left/Middle: phasers | Right: course
-          </div>
-        </div>
+        <PlayerListPanel state={snapshot} rosterVersion={chatVersion} />
+        <ChatPanel chatVersion={chatVersion} />
       </div>
-    </div>
-  );
-}
-
-function PlayerList({
-  state,
-}: {
-  state: import("@netrek/shared").ClientGameState;
-}) {
-  const alivePlayers = state.ships.filter((s) => s.status !== ShipStatus.DEAD);
-  const SHIP_NAMES = ["SC", "DD", "CA", "BB", "AS", "SB"];
-  const TEAM_NAMES = ["Fed", "Rom", "Kli", "Ori"];
-
-  return (
-    <div
-      style={{
-        flex: 1,
-        padding: 6,
-        overflowY: "auto",
-        fontFamily: "monospace",
-        fontSize: 11,
-        color: "#aaa",
-        borderTop: "1px solid #333",
-      }}
-    >
-      <div style={{ color: "#888", marginBottom: 4 }}>
-        Players ({alivePlayers.length})
-      </div>
-      {alivePlayers.map((ship) => {
-        const color = TEAM_COLORS[ship.team] ?? "#888";
-        return (
-          <div key={ship.slotIndex} style={{ color, lineHeight: "16px" }}>
-            {String(ship.slotIndex).padStart(2)}{" "}
-            {SHIP_NAMES[ship.shipType] ?? "??"} {TEAM_NAMES[ship.team] ?? "??"}{" "}
-            <span style={{ color: "#666" }}>
-              Sh:{Math.round(ship.shieldPct * 100)}% Hu:
-              {Math.round((1 - ship.hullDamagePct) * 100)}%
-            </span>
-          </div>
-        );
-      })}
     </div>
   );
 }
