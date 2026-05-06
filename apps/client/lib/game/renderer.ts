@@ -885,14 +885,25 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: ClientGameState): void {
     ctx.fillText(spdLabel, col1 + charW * 6, y + barH);
   }
 
-  // Speed with bar
+  // Speed with bar (absolute range 0-12, tick at ship max)
+  const ABS_MAX_SPEED = 12;
   const spdStr = `Sp[${padNum(spd, 2)}/${padNum(stats.maxSpeed, 2)}]`;
   ctx.fillStyle = "#ffffff";
   ctx.fillText(spdStr, col2, y + barH);
   let bx = col2 + charW * spdStr.length;
-  drawInlineBar(ctx, bx, y + 1, barW, barH, spd / stats.maxSpeed, "#44ff44");
+  drawInlineBar(
+    ctx,
+    bx,
+    y + 1,
+    barW,
+    barH,
+    spd / ABS_MAX_SPEED,
+    "#44ff44",
+    stats.maxSpeed / ABS_MAX_SPEED,
+  );
 
-  // Armies with bar
+  // Armies with bar (absolute range 0-25, tick at kill-based capacity)
+  const ABS_MAX_ARMIES = 25;
   const armyCapacity = Math.min(
     stats.maxArmies,
     Math.floor(self.kills * stats.armiesPerKill),
@@ -901,8 +912,17 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: ClientGameState): void {
   ctx.fillStyle = "#ffffff";
   ctx.fillText(arStr, col3after, y + barH);
   bx = col3after + charW * arStr.length;
-  const arPct = armyCapacity > 0 ? self.armies / armyCapacity : 0;
-  drawInlineBar(ctx, bx, y + 1, barW, barH, arPct, "#44ff44");
+  const arPct = armyCapacity > 0 ? self.armies / ABS_MAX_ARMIES : 0;
+  drawInlineBar(
+    ctx,
+    bx,
+    y + 1,
+    barW,
+    barH,
+    arPct,
+    "#44ff44",
+    armyCapacity / ABS_MAX_ARMIES,
+  );
 
   // Fuel with bar
   const fuelLen = String(stats.maxFuel).length;
@@ -1052,7 +1072,7 @@ function padNum(n: number | string, width: number): string {
   return s.length >= width ? s : " ".repeat(width - s.length) + s;
 }
 
-/** Draw an inline colored bar (used next to text labels) */
+/** Draw an inline colored bar with optional max-capacity tick mark */
 function drawInlineBar(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -1061,6 +1081,7 @@ function drawInlineBar(
   h: number,
   pct: number,
   color: string,
+  maxPct?: number,
 ): void {
   ctx.fillStyle = "#111111";
   ctx.fillRect(x, y, w, h);
@@ -1069,5 +1090,11 @@ function drawInlineBar(
   if (fill > 0) {
     ctx.fillStyle = color;
     ctx.fillRect(x, y, fill, h);
+  }
+
+  if (maxPct !== undefined && maxPct < 1) {
+    const tickX = Math.round(x + w * maxPct);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(tickX, y, 1, h);
   }
 }
