@@ -14,6 +14,7 @@ import {
   type ClientPhaser,
   type ClientExplosion,
   type ClientPlanet,
+  type ClientPlasma,
 } from "@netrek/shared";
 import { getInterpolatedShip, getMySlot } from "./state";
 import { updateViewport } from "./input";
@@ -135,6 +136,11 @@ export function renderFrame(state: ClientGameState | null): void {
     // Torpedoes (draw under ships)
     for (const torp of state.torps) {
       drawTorp(ctx, torp);
+    }
+
+    // Plasmas (draw as larger pulsing dots)
+    for (const plasma of state.plasmas) {
+      drawPlasma(ctx, plasma, state.tick);
     }
 
     // Phasers
@@ -339,6 +345,30 @@ function drawTorp(ctx: CanvasRenderingContext2D, torp: ClientTorp): void {
     ctx.lineTo(cx - half, cy + half);
     ctx.stroke();
   }
+}
+
+function drawPlasma(
+  ctx: CanvasRenderingContext2D,
+  plasma: ClientPlasma,
+  tick: number,
+): void {
+  const [cx, cy] = gameToScreen(plasma.x, plasma.y);
+  if (!canvas) return;
+  if (cx < -10 || cx > canvas.width + 10 || cy < -10 || cy > canvas.height + 10)
+    return;
+
+  const scale = getScale();
+  const basePx = Math.max(4, 120 * scale);
+  const pulse = 1 + 0.3 * Math.sin(tick * 0.5);
+  const px = basePx * pulse;
+  const color = TEAM_COLORS[plasma.team] ?? "#888888";
+
+  ctx.fillStyle = color;
+  ctx.globalAlpha = 0.8;
+  ctx.beginPath();
+  ctx.arc(cx, cy, px / 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1.0;
 }
 
 function drawPhaser(
@@ -773,6 +803,14 @@ function renderGalaxyMap(
       ctx.textAlign = "center";
       ctx.fillText(String(ship.slotIndex), sx, sy - 4);
     }
+  }
+
+  // Plasmas on galaxy map (larger dots)
+  for (const plasma of state.plasmas) {
+    const px = (plasma.x / GALAXY_WIDTH) * w;
+    const py = (plasma.y / GALAXY_HEIGHT) * h;
+    ctx.fillStyle = TEAM_COLORS[plasma.team] ?? "#888";
+    ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, 3, 3);
   }
 
   // Viewport indicator (show tactical view area)
