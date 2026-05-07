@@ -116,6 +116,26 @@ export class StatsService {
     });
   }
 
+  async getMyStats(userId: string) {
+    const stats = await this.prisma.playerStats.findUnique({
+      where: { userId_serverId: { userId, serverId: "official" } },
+    });
+    if (!stats) {
+      return {
+        totalKills: 0,
+        totalDeaths: 0,
+        totalWins: 0,
+        totalLosses: 0,
+        planetsTaken: 0,
+        armiesBombed: 0,
+        armiesBeamed: 0,
+        secondsPlayed: 0,
+        rank: 0,
+      };
+    }
+    return stats;
+  }
+
   async getLeaderboard(serverId: string, limit: number = 20) {
     return this.prisma.playerStats.findMany({
       where: { serverId },

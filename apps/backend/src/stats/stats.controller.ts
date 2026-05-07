@@ -10,6 +10,9 @@ import {
 } from "@nestjs/common";
 import { SkipThrottle } from "@nestjs/throttler";
 import { ServerTokenGuard } from "../servers/guards/server-token.guard";
+import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { User } from "../auth/decorators/user.decorator";
+import { AuthUser } from "../auth/types/jwt.types";
 import { StatsService } from "./stats.service";
 import { IngestStatsDto } from "./dto/ingest-stats.dto";
 import { ReportMatchDto } from "./dto/report-match.dto";
@@ -32,6 +35,12 @@ export class StatsController {
   reportMatch(@Body() dto: ReportMatchDto, @Req() req: any) {
     const isOfficial: boolean = req.gameServer.isOfficial;
     return this.statsService.reportMatch(dto, isOfficial);
+  }
+
+  @Get("me")
+  @UseGuards(JwtAuthGuard)
+  getMyStats(@User() user: AuthUser) {
+    return this.statsService.getMyStats(user.id);
   }
 
   @Get("leaderboard/:serverId")
