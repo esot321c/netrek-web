@@ -14,6 +14,7 @@ let prevPhaserSlots = new Set<number>();
 const prevShipStatuses = new Map<number, ShipStatus>();
 let prevShieldsUp = false;
 let prevAlertStatus = AlertStatus.GREEN;
+let prevTractoring = false;
 
 const SOUNDS = [
   "nt_phaser",
@@ -27,6 +28,7 @@ const SOUNDS = [
   "nt_torp_hit",
   "nt_enter_ship",
   "nt_red_alert",
+  "nt_tractor",
 ] as const;
 
 type SoundName = (typeof SOUNDS)[number];
@@ -57,6 +59,10 @@ export function resumeAudio(): void {
   if (audioCtx?.state === "suspended") {
     audioCtx.resume();
   }
+}
+
+export function playSound(name: string, volume = 0.5): void {
+  play(name as SoundName, volume);
 }
 
 function play(name: SoundName, volume = 0.5): void {
@@ -149,6 +155,12 @@ export function processSounds(state: ClientGameState): void {
       play("nt_red_alert", 0.5);
     }
     prevAlertStatus = myShip.alertStatus;
+
+    // Tractor beam start (own ship only)
+    if (myShip.tractoring && !prevTractoring) {
+      play("nt_tractor", 0.5);
+    }
+    prevTractoring = myShip.tractoring;
   }
 }
 
@@ -158,4 +170,5 @@ export function resetSound(): void {
   prevShipStatuses.clear();
   prevShieldsUp = false;
   prevAlertStatus = AlertStatus.GREEN;
+  prevTractoring = false;
 }

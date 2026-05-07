@@ -29,6 +29,7 @@ import {
   resumeAudio,
   processSounds,
   resetSound,
+  playSound,
 } from "@/lib/game/sound";
 import {
   handleChatMessage,
@@ -144,6 +145,7 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
     onJoined((data) => {
       setMySlot(data.slot);
       setPhase("playing");
+      playSound("nt_enter_ship", 0.6);
     });
 
     onChat((msg) => {
