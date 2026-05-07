@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { IngestStatsDto } from "./dto/ingest-stats.dto";
 import { ReportMatchDto } from "./dto/report-match.dto";
+import { calculateDI, rankForDI } from "@netrek/shared";
 
 @Injectable()
 export class StatsService {
@@ -36,6 +37,24 @@ export class StatsService {
           secondsPlayed: { increment: p.secondsPlayed },
         },
       });
+
+      const updated = await this.prisma.playerStats.findUnique({
+        where: { userId_serverId: { userId: p.userId, serverId: scope } },
+      });
+      if (updated) {
+        const di = calculateDI({
+          planetsTaken: updated.planetsTaken,
+          armiesBombed: updated.armiesBombed,
+          kills: updated.totalKills,
+        });
+        const newRank = rankForDI(di);
+        if (newRank !== updated.rank) {
+          await this.prisma.playerStats.update({
+            where: { userId_serverId: { userId: p.userId, serverId: scope } },
+            data: { rank: newRank },
+          });
+        }
+      }
     }
 
     this.logger.debug(
