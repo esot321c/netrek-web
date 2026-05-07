@@ -299,6 +299,9 @@ export class GameState {
     for (let i = 0; i < this.explosions.length; i++) {
       this.explosions[i]!.alive = false;
     }
+    for (let i = 0; i < this.plasmas.length; i++) {
+      this.plasmas[i]!.alive = false;
+    }
 
     for (let i = 0; i < PLANET_DEFS.length && i < this.planets.length; i++) {
       const def = PLANET_DEFS[i]!;

@@ -84,6 +84,19 @@ import {
   MAX_PLAYERS,
   Team,
   type KillEvent,
+  type PlasmaState,
+  GALAXY_WIDTH,
+  GALAXY_HEIGHT,
+  PLASMA_SPEED,
+  PLASMA_DAMAGE,
+  PLASMA_SPLASH_RADIUS,
+  PLASMA_FUEL_COST,
+  PLASMA_HEAT,
+  PLASMA_LIFETIME,
+  PLASMA_TURN_RATE,
+  PLASMA_MIN_KILLS,
+  PLASMA_HIT_RADIUS,
+  PLASMA_LOCK_RANGE,
 } from "@netrek/shared";
 import { GameService } from "./game.service";
 import { BotManagerService } from "./bot";
@@ -192,6 +205,9 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
 
     // Step 3: Move torpedoes and check collisions
     this.updateTorpedoes();
+
+    // Step 3b: Move plasmas, track targets, check collisions
+    this.updatePlasmas();
 
     // Step 4: Phaser cooldowns
     this.updatePhaserCooldowns(state.ships);
@@ -372,6 +388,11 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
 
           case InputCommand.DOCK:
             this.toggleDock(ship);
+            break;
+
+          case InputCommand.FIRE_PLASMA:
+            if (ship.cloaked || ship.uncloakTicks > 0) break;
+            this.firePlasma(ship, input.value & 0xff);
             break;
         }
       }
@@ -1121,6 +1142,55 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
       TORP_LIFETIME_BASE + Math.floor(Math.random() * TORP_LIFETIME_VARIANCE);
   }
 
+  private firePlasma(ship: ShipState, direction: number): void {
+    if (
+      ship.shipType !== ShipType.DD &&
+      ship.shipType !== ShipType.CA &&
+      ship.shipType !== ShipType.BB &&
+      ship.shipType !== ShipType.SB
+    )
+      return;
+
+    if (ship.kills < PLASMA_MIN_KILLS) return;
+    if (ship.weaponBurnoutTicks > 0) return;
+    if (ship.fuel < PLASMA_FUEL_COST) return;
+
+    const plasmas = this.gameService.state.plasmas;
+    for (let i = 0; i < plasmas.length; i++) {
+      if (plasmas[i]!.alive && plasmas[i]!.ownerSlot === ship.slotIndex) return;
+    }
+
+    const plasma = this.gameService.state.allocatePlasma();
+    if (!plasma) return;
+
+    ship.fuel -= PLASMA_FUEL_COST;
+    ship.weaponTemp += PLASMA_HEAT;
+
+    plasma.alive = true;
+    plasma.x = ship.x;
+    plasma.y = ship.y;
+    plasma.direction = direction;
+    plasma.ownerSlot = ship.slotIndex;
+    plasma.team = ship.team;
+    plasma.ticksRemaining = PLASMA_LIFETIME;
+
+    const ships = this.gameService.state.ships;
+    let bestTarget = -1;
+    let bestDist = PLASMA_LOCK_RANGE;
+    for (let i = 0; i < ships.length; i++) {
+      const target = ships[i]!;
+      if (target.status !== ShipStatus.ALIVE) continue;
+      if (target.team === ship.team) continue;
+      if (target.cloaked) continue;
+      const dist = distance(ship.x, ship.y, target.x, target.y);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestTarget = target.slotIndex;
+      }
+    }
+    plasma.targetSlot = bestTarget;
+  }
+
   private firePhaser(ship: ShipState, direction: number): void {
     const stats = SHIP_STATS[ship.shipType];
 
@@ -1187,6 +1257,18 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
       phaser.y2 = ship.y - Math.cos(rad) * stats.maxPhaserRange;
       phaser.damage = 0;
     }
+
+    // Phaser can destroy enemy plasmas near the hit point
+    const plasmaArr = this.gameService.state.plasmas;
+    for (let pi = 0; pi < plasmaArr.length; pi++) {
+      const p = plasmaArr[pi]!;
+      if (!p.alive) continue;
+      if (p.team === ship.team) continue;
+      const pdist = distance(phaser.x2, phaser.y2, p.x, p.y);
+      if (pdist <= PLASMA_HIT_RADIUS) {
+        this.explodePlasma(p);
+      }
+    }
   }
 
   private detonate(ship: ShipState): void {
@@ -1207,6 +1289,17 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
 
       // Explode the torp
       this.explodeTorp(torp);
+    }
+
+    // Also detonate enemy plasmas in range
+    const plasmas = this.gameService.state.plasmas;
+    for (let i = 0; i < plasmas.length; i++) {
+      const p = plasmas[i]!;
+      if (!p.alive) continue;
+      if (p.team === ship.team) continue;
+      const pdist = distance(ship.x, ship.y, p.x, p.y);
+      if (pdist > DET_RANGE) continue;
+      this.explodePlasma(p);
     }
   }
 
@@ -1285,6 +1378,22 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
           break;
         }
       }
+
+      // Check collision with plasmas (torps can destroy plasmas)
+      if (torp.alive) {
+        const plasmas = state.plasmas;
+        for (let k = 0; k < plasmas.length; k++) {
+          const p = plasmas[k]!;
+          if (!p.alive) continue;
+          if (p.team === torp.team) continue;
+          const pdist = distance(torp.x, torp.y, p.x, p.y);
+          if (pdist <= PLASMA_HIT_RADIUS) {
+            torp.alive = false;
+            this.explodePlasma(p);
+            break;
+          }
+        }
+      }
     }
   }
 
@@ -1317,6 +1426,105 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
       expl.radius = 0;
       expl.maxRadius = 400;
       expl.ticksRemaining = 8;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Step 3b: Plasmas
+  // -------------------------------------------------------------------------
+
+  private updatePlasmas(): void {
+    const state = this.gameService.state;
+    const plasmas = state.plasmas;
+    const ships = state.ships;
+
+    for (let i = 0; i < plasmas.length; i++) {
+      const p = plasmas[i]!;
+      if (!p.alive) continue;
+
+      p.ticksRemaining--;
+      if (p.ticksRemaining <= 0) {
+        this.explodePlasma(p);
+        continue;
+      }
+
+      // Tracking — steer toward target
+      if (p.targetSlot >= 0) {
+        const target = ships[p.targetSlot]!;
+        if (target.status !== ShipStatus.ALIVE || target.cloaked) {
+          p.targetSlot = -1;
+        } else {
+          const targetDir = angleBetween(p.x, p.y, target.x, target.y);
+          let diff = targetDir - p.direction;
+          if (diff > 128) diff -= 256;
+          if (diff < -128) diff += 256;
+          if (Math.abs(diff) <= PLASMA_TURN_RATE) {
+            p.direction = targetDir;
+          } else {
+            p.direction =
+              (p.direction +
+                (diff > 0 ? PLASMA_TURN_RATE : -PLASMA_TURN_RATE) +
+                256) %
+              256;
+          }
+        }
+      }
+
+      // Move
+      const rad = directionToRadians(p.direction);
+      const vel = PLASMA_SPEED * SPEED_SCALE;
+      p.x += Math.sin(rad) * vel;
+      p.y += -Math.cos(rad) * vel;
+
+      // Out of bounds = die
+      if (p.x < 0 || p.x > GALAXY_WIDTH || p.y < 0 || p.y > GALAXY_HEIGHT) {
+        p.alive = false;
+        continue;
+      }
+
+      // Check collision with ships
+      for (let j = 0; j < ships.length; j++) {
+        const target = ships[j]!;
+        if (target.status !== ShipStatus.ALIVE) continue;
+        if (target.slotIndex === p.ownerSlot) continue;
+
+        const dist = distance(p.x, p.y, target.x, target.y);
+        if (dist <= PLASMA_HIT_RADIUS) {
+          this.explodePlasma(p);
+          break;
+        }
+      }
+    }
+  }
+
+  private explodePlasma(plasma: PlasmaState): void {
+    plasma.alive = false;
+
+    const state = this.gameService.state;
+    const ships = state.ships;
+
+    for (let i = 0; i < ships.length; i++) {
+      const target = ships[i]!;
+      if (target.status !== ShipStatus.ALIVE) continue;
+
+      const dist = distance(plasma.x, plasma.y, target.x, target.y);
+      if (dist > PLASMA_SPLASH_RADIUS) continue;
+
+      const dmg = PLASMA_DAMAGE * (1 - dist / PLASMA_SPLASH_RADIUS);
+      if (dmg > 0) {
+        applyDamage(target, dmg);
+        target.lastDamagedBySlot = plasma.ownerSlot;
+      }
+    }
+
+    const expl = state.allocateExplosion();
+    if (expl) {
+      expl.alive = true;
+      expl.x = plasma.x;
+      expl.y = plasma.y;
+      expl.radius = 0;
+      expl.maxRadius = 800;
+      expl.ticksRemaining = 12;
     }
   }
 
