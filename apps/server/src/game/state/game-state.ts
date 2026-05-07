@@ -60,6 +60,7 @@ function createShip(slotIndex: number): ShipState {
     lockType: LockType.NONE,
     lockTargetId: -1,
     explodeTicks: 0,
+    deathTick: 0,
     lastDamagedBySlot: -1,
     playerId: "",
   };
@@ -201,6 +202,7 @@ export class GameState {
     ship.lockType = LockType.NONE;
     ship.lockTargetId = -1;
     ship.explodeTicks = 0;
+    ship.deathTick = 0;
     ship.lastDamagedBySlot = -1;
   }
 

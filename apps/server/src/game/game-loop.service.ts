@@ -1460,6 +1460,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
       ship.explodeTicks--;
       if (ship.explodeTicks <= 0) {
         ship.status = ShipStatus.DEAD;
+        ship.deathTick = state.currentTick;
       }
     }
 

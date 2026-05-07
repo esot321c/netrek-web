@@ -61,6 +61,7 @@ export const EXPLOSION_INNER_RADIUS = 350;
 export const EXPLOSION_OUTER_RADIUS = 3000;
 export const EXPLOSION_FALLOFF_DIVISOR = 2650;
 export const EXPLOSION_DURATION_TICKS = 20; // 2 seconds visual
+export const RESPAWN_DELAY_TICKS = 30; // 3 seconds at 10Hz
 
 // ---------------------------------------------------------------------------
 // Alert status thresholds
@@ -152,9 +153,9 @@ export const TRACTOR_ENGINE_HEAT = 5;
 // ---------------------------------------------------------------------------
 
 /** Base damage per tick from hostile planet (with armies > 0) */
-export const HOSTILE_PLANET_DMG_BASE = 0.8;
+export const HOSTILE_PLANET_DMG_BASE = 0.3;
 /** Additional damage per tick per 10 armies on hostile planet */
-export const HOSTILE_PLANET_DMG_PER_10 = 0.4;
+export const HOSTILE_PLANET_DMG_PER_10 = 0.2;
 
 // ---------------------------------------------------------------------------
 // Refitting
@@ -651,7 +652,8 @@ export const SHIP_STATS: Readonly<Record<ShipType, ShipStats>> = Object.freeze({
     torpHeat: 25,
     explosionDamage: 75,
     maxWpnTemp: 1000,
-    maxEgnTemp: 1000,
+    maxEgnTemp: 1200,
+    cloakFuelPerTick: 10,
   },
   [ShipType.DD]: {
     maxSpeed: 10,
@@ -661,7 +663,7 @@ export const SHIP_STATS: Readonly<Record<ShipType, ShipStats>> = Object.freeze({
     maxHull: 85,
     maxFuel: 7000,
     maxArmies: 5,
-    armiesPerKill: 1.67,
+    armiesPerKill: 2,
     torpSpeed: 14,
     torpDamage: 30,
     phaserDamage: 85,
@@ -684,6 +686,7 @@ export const SHIP_STATS: Readonly<Record<ShipType, ShipStats>> = Object.freeze({
     explosionDamage: 100,
     maxWpnTemp: 1000,
     maxEgnTemp: 1000,
+    cloakFuelPerTick: 10,
   },
   [ShipType.CA]: {
     maxSpeed: 9,
@@ -716,6 +719,7 @@ export const SHIP_STATS: Readonly<Record<ShipType, ShipStats>> = Object.freeze({
     explosionDamage: 100,
     maxWpnTemp: 1000,
     maxEgnTemp: 1000,
+    cloakFuelPerTick: 10,
   },
   [ShipType.BB]: {
     maxSpeed: 8,
@@ -748,6 +752,7 @@ export const SHIP_STATS: Readonly<Record<ShipType, ShipStats>> = Object.freeze({
     explosionDamage: 100,
     maxWpnTemp: 1000,
     maxEgnTemp: 1000,
+    cloakFuelPerTick: 10,
   },
   [ShipType.AS]: {
     maxSpeed: 8,
@@ -780,6 +785,7 @@ export const SHIP_STATS: Readonly<Record<ShipType, ShipStats>> = Object.freeze({
     explosionDamage: 100,
     maxWpnTemp: 1000,
     maxEgnTemp: 1200,
+    cloakFuelPerTick: 5,
   },
   [ShipType.SB]: {
     maxSpeed: 2,
@@ -812,5 +818,6 @@ export const SHIP_STATS: Readonly<Record<ShipType, ShipStats>> = Object.freeze({
     explosionDamage: 200,
     maxWpnTemp: 1300,
     maxEgnTemp: 1000,
+    cloakFuelPerTick: 50,
   },
 });

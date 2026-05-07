@@ -100,6 +100,7 @@ export interface ShipStats {
   readonly explosionDamage: number;
   readonly maxWpnTemp: number;
   readonly maxEgnTemp: number;
+  readonly cloakFuelPerTick: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -174,6 +175,7 @@ export interface ShipState {
 
   // Explosion timer (while EXPLODING)
   explodeTicks: number;
+  deathTick: number;
 
   // Damage attribution — slot of last ship that dealt weapon damage (-1 = none/environment)
   lastDamagedBySlot: number;

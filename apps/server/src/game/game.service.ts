@@ -7,6 +7,7 @@ import {
   SB_MIN_RANK,
   calculateDI,
   rankForDI,
+  RESPAWN_DELAY_TICKS,
 } from "@netrek/shared";
 import { GameState } from "./state/game-state";
 import { InputQueue } from "./state/input-queue";
@@ -18,6 +19,7 @@ export interface RespawnResult {
   ok: boolean;
   reason?: string;
   cooldownRemainingSec?: number;
+  remainingSec?: number;
 }
 
 /** Homeworld indices in PLANET_DEFS (first planet of each team's 10) */
@@ -114,6 +116,19 @@ export class GameService {
         this.state.torps[i]!.ownerSlot === slot
       ) {
         return { ok: false, reason: "torps" };
+      }
+    }
+
+    // Check respawn delay
+    if (ship.deathTick > 0) {
+      const elapsed = this.state.currentTick - ship.deathTick;
+      if (elapsed < RESPAWN_DELAY_TICKS) {
+        const remainingTicks = RESPAWN_DELAY_TICKS - elapsed;
+        return {
+          ok: false,
+          reason: "respawn_delay",
+          remainingSec: remainingTicks / 10,
+        };
       }
     }
 
