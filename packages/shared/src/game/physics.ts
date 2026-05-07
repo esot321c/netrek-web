@@ -309,25 +309,25 @@ export function updateFuel(ship: ShipState): void {
   }
 }
 
-/** Update shield and hull repair for one tick. */
+/** Update shield and hull repair for one tick. Rates are in thousandths of max. */
 export function updateRepair(ship: ShipState): void {
   const stats = SHIP_STATS[ship.shipType];
-  const repairMultiplier = ship.repairMode ? 2 : 1;
+  const multiplier = ship.repairMode ? 4 : 2;
 
   // Shield repair — always active
   if (ship.shieldStrength < stats.maxShields) {
+    const gain =
+      (stats.shieldRepairRate * multiplier * stats.maxShields) / 1000;
     ship.shieldStrength = Math.min(
       stats.maxShields,
-      ship.shieldStrength + stats.shieldRepairRate * repairMultiplier,
+      ship.shieldStrength + gain,
     );
   }
 
-  // Hull repair — only when shields are down
+  // Hull repair — only when shields are down, half as fast as shields
   if (!ship.shieldsUp && ship.hullDamage > 0) {
-    ship.hullDamage = Math.max(
-      0,
-      ship.hullDamage - stats.hullRepairRate * repairMultiplier,
-    );
+    const gain = (stats.hullRepairRate * multiplier * stats.maxHull) / 1000;
+    ship.hullDamage = Math.max(0, ship.hullDamage - gain);
   }
 }
 

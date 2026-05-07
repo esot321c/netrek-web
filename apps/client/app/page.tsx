@@ -73,33 +73,47 @@ export default function HomePage() {
                 <kbd className="bg-gray-800 text-gray-200 px-1 rounded">
                   0–9
                 </kbd>{" "}
-                — Set warp speed 0–9
-              </li>
-              <li>
-                <kbd className="bg-gray-800 text-gray-200 px-1 rounded">)</kbd>{" "}
-                — Warp 10
-              </li>
-              <li>
-                <kbd className="bg-gray-800 text-gray-200 px-1 rounded">!</kbd>{" "}
-                — Warp 11
-              </li>
-              <li>
-                <kbd className="bg-gray-800 text-gray-200 px-1 rounded">@</kbd>{" "}
-                — Warp 12
-              </li>
-              <li>
-                <kbd className="bg-gray-800 text-gray-200 px-1 rounded">%</kbd>{" "}
-                — Maximum speed
+                — Set warp 0–9
               </li>
               <li>
                 <kbd className="bg-gray-800 text-gray-200 px-1 rounded">
-                  Right click
+                  ) ! @
                 </kbd>{" "}
-                — Set course to cursor
+                — Warp 10 / 11 / 12
+              </li>
+              <li>
+                <kbd className="bg-gray-800 text-gray-200 px-1 rounded">
+                  % #
+                </kbd>{" "}
+                — Max warp / Half warp
+              </li>
+              <li>
+                <kbd className="bg-gray-800 text-gray-200 px-1 rounded">
+                  {"< >"}
+                </kbd>{" "}
+                — Speed -1 / +1
+              </li>
+              <li>
+                <kbd className="bg-gray-800 text-gray-200 px-1 rounded">
+                  Right click / k
+                </kbd>{" "}
+                — Set course
+              </li>
+              <li>
+                <kbd className="bg-gray-800 text-gray-200 px-1 rounded">o</kbd>{" "}
+                — Orbit planet or dock at starbase
               </li>
               <li>
                 <kbd className="bg-gray-800 text-gray-200 px-1 rounded">l</kbd>{" "}
                 — Lock onto nearest entity
+              </li>
+              <li>
+                <kbd className="bg-gray-800 text-gray-200 px-1 rounded">;</kbd>{" "}
+                — Lock planet/starbase only
+              </li>
+              <li>
+                <kbd className="bg-gray-800 text-gray-200 px-1 rounded">*</kbd>{" "}
+                — Transwarp to starbase
               </li>
             </ul>
           </div>
@@ -114,13 +128,17 @@ export default function HomePage() {
                 <kbd className="bg-gray-800 text-gray-200 px-1 rounded">
                   Left click
                 </kbd>{" "}
-                — Fire torpedoes toward cursor
+                — Fire torpedoes
               </li>
               <li>
                 <kbd className="bg-gray-800 text-gray-200 px-1 rounded">
                   Shift+Left / Middle
                 </kbd>{" "}
                 — Fire phasers
+              </li>
+              <li>
+                <kbd className="bg-gray-800 text-gray-200 px-1 rounded">f</kbd>{" "}
+                — Fire plasma torpedo
               </li>
               <li>
                 <kbd className="bg-gray-800 text-gray-200 px-1 rounded">s</kbd>{" "}
@@ -132,15 +150,17 @@ export default function HomePage() {
               </li>
               <li>
                 <kbd className="bg-gray-800 text-gray-200 px-1 rounded">d</kbd>{" "}
-                — Detonate enemy torpedoes
+                — Detonate enemy torps
               </li>
               <li>
-                <kbd className="bg-gray-800 text-gray-200 px-1 rounded">D</kbd>{" "}
-                — Detonate own torpedoes
+                <kbd className="bg-gray-800 text-gray-200 px-1 rounded">
+                  T / y
+                </kbd>{" "}
+                — Tractor / Pressor beam
               </li>
               <li>
-                <kbd className="bg-gray-800 text-gray-200 px-1 rounded">r</kbd>{" "}
-                — Toggle repair mode
+                <kbd className="bg-gray-800 text-gray-200 px-1 rounded">R</kbd>{" "}
+                — Repair mode
               </li>
             </ul>
           </div>
@@ -153,7 +173,7 @@ export default function HomePage() {
             <ul className="space-y-1 text-sm text-gray-400">
               <li>
                 <kbd className="bg-gray-800 text-gray-200 px-1 rounded">b</kbd>{" "}
-                — Bomb enemy planet
+                — Bomb planet
               </li>
               <li>
                 <kbd className="bg-gray-800 text-gray-200 px-1 rounded">z</kbd>{" "}
@@ -176,12 +196,8 @@ export default function HomePage() {
             </h3>
             <ul className="space-y-1 text-sm text-gray-400">
               <li>
-                <kbd className="bg-gray-800 text-gray-200 px-1 rounded">T</kbd>{" "}
-                — Tractor beam toggle
-              </li>
-              <li>
-                <kbd className="bg-gray-800 text-gray-200 px-1 rounded">y</kbd>{" "}
-                — Pressor beam toggle
+                <kbd className="bg-gray-800 text-gray-200 px-1 rounded">r</kbd>{" "}
+                — Refit ship (orbit homeworld)
               </li>
               <li>
                 <kbd className="bg-gray-800 text-gray-200 px-1 rounded">L</kbd>{" "}
@@ -194,6 +210,10 @@ export default function HomePage() {
               <li>
                 <kbd className="bg-gray-800 text-gray-200 px-1 rounded">h</kbd>{" "}
                 — Toggle help window
+              </li>
+              <li>
+                <kbd className="bg-gray-800 text-gray-200 px-1 rounded">m</kbd>{" "}
+                — Send message
               </li>
             </ul>
           </div>

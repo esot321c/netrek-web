@@ -1,4 +1,10 @@
-import { InputCommand, LockType, ShipStatus, ShipType } from "@netrek/shared";
+import {
+  InputCommand,
+  LockType,
+  ShipStatus,
+  ShipType,
+  SHIP_STATS,
+} from "@netrek/shared";
 import { sendInput, sendChat } from "./socket";
 import { getMySlot, getLatestSnapshot } from "./state";
 import {
@@ -126,6 +132,53 @@ function lockNearestEntity(): void {
     const s = snap.ships[i]!;
     if (s.slotIndex === mySlot) continue;
     if (s.status !== 0) continue; // ShipStatus.ALIVE = 0
+    const dx = s.x - gx;
+    const dy = s.y - gy;
+    const d = dx * dx + dy * dy;
+    if (d < bestDist) {
+      bestDist = d;
+      bestType = LockType.PLAYER;
+      bestId = s.slotIndex;
+    }
+  }
+
+  if (bestType !== LockType.NONE && bestId >= 0) {
+    sendInput(InputCommand.LOCK, (bestType << 8) | bestId);
+  }
+}
+
+/** Lock the nearest planet or starbase (no regular ships). Used by `;` key. */
+function lockNearestPlanetOrSB(): void {
+  if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  const px = lastMouseX - rect.left;
+  const py = lastMouseY - rect.top;
+  const gx = viewportCenterX + (px - canvas.width / 2) / viewportScale;
+  const gy = viewportCenterY + (py - canvas.height / 2) / viewportScale;
+
+  const snap = getLatestSnapshot();
+  if (!snap) return;
+
+  let bestType = LockType.NONE;
+  let bestId = -1;
+  let bestDist = Infinity;
+
+  for (let i = 0; i < snap.planets.length; i++) {
+    const p = snap.planets[i]!;
+    const dx = p.x - gx;
+    const dy = p.y - gy;
+    const d = dx * dx + dy * dy;
+    if (d < bestDist) {
+      bestDist = d;
+      bestType = LockType.PLANET;
+      bestId = p.planetId;
+    }
+  }
+
+  for (let i = 0; i < snap.ships.length; i++) {
+    const s = snap.ships[i]!;
+    if (s.shipType !== ShipType.SB) continue;
+    if (s.status !== ShipStatus.ALIVE) continue;
     const dx = s.x - gx;
     const dy = s.y - gy;
     const d = dx * dx + dy * dy;
@@ -354,11 +407,110 @@ function handleKeyDown(e: KeyboardEvent): void {
       const dx = gx - me.x;
       const dy = gy - me.y;
       const angle = Math.atan2(dx, -dy);
-      const dir =
+      const plasmaDir =
         ((Math.round((angle / (2 * Math.PI)) * 256) % 256) + 256) % 256;
-      sendInput(InputCommand.FIRE_PLASMA, dir);
+      sendInput(InputCommand.FIRE_PLASMA, plasmaDir);
       break;
     }
+    case "o":
+      e.preventDefault();
+      sendInput(InputCommand.ORBIT, 0);
+      break;
+    case ";":
+      e.preventDefault();
+      lockNearestPlanetOrSB();
+      break;
+    case "k": {
+      e.preventDefault();
+      if (!canvas) break;
+      const kRect = canvas.getBoundingClientRect();
+      const kpx = lastMouseX - kRect.left;
+      const kpy = lastMouseY - kRect.top;
+      const kdx = kpx - canvas.width / 2;
+      const kdy = kpy - canvas.height / 2;
+      const kRad = Math.atan2(kdx, -kdy);
+      const kDir =
+        Math.round(
+          ((((kRad % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) /
+            (Math.PI * 2)) *
+            256,
+        ) & 0xff;
+      sendInput(InputCommand.SET_DIRECTION, kDir);
+      break;
+    }
+    case "<":
+    case ",": {
+      e.preventDefault();
+      const snapSpeed = getLatestSnapshot();
+      const myShipDown = snapSpeed?.ships.find(
+        (s) => s.slotIndex === getMySlot(),
+      );
+      if (myShipDown && myShipDown.speed > 0) {
+        sendInput(InputCommand.SET_SPEED, myShipDown.speed - 1);
+      }
+      break;
+    }
+    case ">":
+    case ".": {
+      e.preventDefault();
+      const snapSpeedUp = getLatestSnapshot();
+      const myShipUp = snapSpeedUp?.ships.find(
+        (s) => s.slotIndex === getMySlot(),
+      );
+      if (myShipUp) {
+        sendInput(InputCommand.SET_SPEED, myShipUp.speed + 1);
+      }
+      break;
+    }
+    case "#": {
+      e.preventDefault();
+      const snapHalf = getLatestSnapshot();
+      const myShipHalf = snapHalf?.ships.find(
+        (s) => s.slotIndex === getMySlot(),
+      );
+      if (myShipHalf) {
+        const maxSpd = SHIP_STATS[myShipHalf.shipType].maxSpeed;
+        sendInput(InputCommand.SET_SPEED, Math.floor(maxSpd / 2));
+      }
+      break;
+    }
+    case "$":
+      e.preventDefault();
+      sendInput(InputCommand.TRACTOR, 0xff);
+      sendInput(InputCommand.PRESSOR, 0xff);
+      break;
+    case "_": {
+      e.preventDefault();
+      const tractorOnSlot = findNearestShip();
+      if (tractorOnSlot >= 0) {
+        sendInput(InputCommand.TRACTOR, tractorOnSlot);
+      }
+      break;
+    }
+    case "^": {
+      e.preventDefault();
+      const pressorOnSlot = findNearestShip();
+      if (pressorOnSlot >= 0) {
+        sendInput(InputCommand.PRESSOR, pressorOnSlot);
+      }
+      break;
+    }
+    case "[":
+      e.preventDefault();
+      sendInput(InputCommand.SHIELD_TOGGLE, 2); // shields down
+      break;
+    case "]":
+      e.preventDefault();
+      sendInput(InputCommand.SHIELD_TOGGLE, 1); // shields up
+      break;
+    case "{":
+      e.preventDefault();
+      sendInput(InputCommand.CLOAK_TOGGLE, 1); // cloak on
+      break;
+    case "}":
+      e.preventDefault();
+      sendInput(InputCommand.CLOAK_TOGGLE, 2); // cloak off
+      break;
   }
 }
 

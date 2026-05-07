@@ -301,27 +301,35 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
               <div style={{ color: "#ffff00", marginBottom: 8, fontSize: 14 }}>
                 Speed & Navigation
               </div>
-              <HelpRow k="0-9" desc="Set warp speed 0-9" />
-              <HelpRow k=")" desc="Warp 10" />
-              <HelpRow k="!" desc="Warp 11" />
-              <HelpRow k="@" desc="Warp 12" />
-              <HelpRow k="%" desc="Maximum speed" />
+              <HelpRow k="0-9" desc="Set warp 0-9" />
+              <HelpRow k=") ! @" desc="Warp 10 / 11 / 12" />
+              <HelpRow k="% #" desc="Max warp / Half warp" />
+              <HelpRow k="< >" desc="Decrease / Increase warp by 1" />
+              <HelpRow k="k" desc="Set course (at mouse)" />
+              <HelpRow k="o" desc="Enter orbit or dock" />
               <HelpRow k="l" desc="Lock onto nearest planet/player" />
+              <HelpRow k=";" desc="Lock planet/starbase only" />
+              <HelpRow k="*" desc="Transwarp to starbase" />
               <div style={{ color: "#ffff00", marginTop: 8, marginBottom: 4 }}>
                 Weapons & Defense
               </div>
               <HelpRow k="s" desc="Toggle shields" />
+              <HelpRow k="[ ]" desc="Shields down / up" />
               <HelpRow k="c" desc="Toggle cloak" />
+              <HelpRow k="{ }" desc="Cloak on / off" />
               <HelpRow k="d" desc="Detonate enemy torps" />
               <HelpRow k="D" desc="Detonate own torps" />
-              <HelpRow k="T" desc="Tractor beam toggle" />
-              <HelpRow k="y" desc="Pressor beam toggle" />
+              <HelpRow k="f" desc="Fire plasma torpedo" />
+              <HelpRow k="T" desc="Tractor beam" />
+              <HelpRow k="y" desc="Pressor beam" />
+              <HelpRow k="_ ^" desc="Tractor on / Pressor on" />
+              <HelpRow k="$" desc="Tractor/pressor off" />
               <HelpRow k="r" desc="Refit ship (orbit homeworld)" />
               <HelpRow k="R" desc="Toggle repair mode" />
               <div style={{ color: "#ffff00", marginTop: 8, marginBottom: 4 }}>
-                Planet Operations
+                Planet & Starbase Operations
               </div>
-              <HelpRow k="b" desc="Bomb enemy planet" />
+              <HelpRow k="b" desc="Bomb planet" />
               <HelpRow k="z" desc="Beam up armies" />
               <HelpRow k="x" desc="Beam down armies" />
               <div style={{ color: "#ffff00", marginTop: 8, marginBottom: 4 }}>

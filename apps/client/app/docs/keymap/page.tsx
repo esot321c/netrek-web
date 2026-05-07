@@ -23,26 +23,26 @@ export default function KeymapPage() {
       <Section title="Lowercase Commands">
         <KeyTable
           rows={[
-            ["b", "Bomb Planet", true],
-            ["c", "Cloak/uncloak", true],
-            ["d", "Detonate enemy Torp", true],
+            ["b", "Bomb planet", true],
+            ["c", "Cloak/uncloak toggle", true],
+            ["d", "Detonate enemy torps", true],
             ["e", "Toggle docking permission (SB only)", false],
-            ["f", "Plasma torpedo", false],
+            ["f", "Fire plasma torpedo", true],
             ["h", "Help window", true],
-            ["i", "Information", true],
-            ["k", "Set course (at mouse)", false],
-            ["l", "Lock onto object (at mouse)", true],
+            ["i", "Information on nearest entity", true],
+            ["k", "Set course (at mouse)", true],
+            ["l", "Lock onto nearest planet/player", true],
             ["m", "Start sending message", true],
-            ["o", "Orbit", false],
-            ["p", "Phasers", false],
+            ["o", "Enter orbit or dock at starbase", true],
+            ["p", "Phasers (use Shift+Left click)", false],
             ["q", "Quit game quickly", false],
-            ["r", "Refit", false],
-            ["s", "Shields", true],
-            ["t", "Torpedo", false],
+            ["r", "Refit ship (orbit homeworld)", true],
+            ["s", "Toggle shields", true],
+            ["t", "Torpedo (use Left click)", false],
             ["w", "Change war declaration", false],
-            ["x", "Beam down", true],
+            ["x", "Beam down armies", true],
             ["y", "Pressor beam", true],
-            ["z", "Beam up", true],
+            ["z", "Beam up armies", true],
           ]}
         />
       </Section>
@@ -50,22 +50,22 @@ export default function KeymapPage() {
       <Section title="Uppercase Commands">
         <KeyTable
           rows={[
-            ["D", "Detonate your own Torps", true],
+            ["D", "Detonate your own torps", true],
             ["E", "Send generic distress call", false],
             ["F", "Send 'armies carried' report", false],
             ["L", "Players list", true],
             ["M", "Toggle Message Log", false],
             ["N", "Toggle Long/Short Planet Names", false],
             ["O", "Options Window", false],
-            ["R", "Enter Repair mode", true],
+            ["R", "Enter repair mode", true],
             ["S", "Toggle Stats Window", false],
-            ["T", "Tractor Beam", true],
+            ["T", "Tractor beam", true],
             ["X", "Enter Macro Mode", true],
           ]}
         />
       </Section>
 
-      <Section title="Number Keys">
+      <Section title="Special Keys">
         <KeyTable
           rows={[
             ["0-9", "Set warp speed 0-9", true],
@@ -73,15 +73,20 @@ export default function KeymapPage() {
             ["!", "Warp 11", true],
             ["@", "Warp 12", true],
             ["%", "Maximum warp", true],
-            ["$", "Tractor/pressor off", false],
-            ["^", "Pressor beam ON", false],
-            ["<", "Decrease Warp by one", false],
-            [">", "Increase Warp by one", false],
+            ["#", "Half maximum warp", true],
+            ["< >", "Decrease / Increase warp by 1", true],
+            ["*", "Transwarp to starbase", true],
+            [";", "Lock planet/starbase only", true],
+            ["$", "Tractor/pressor off", true],
+            ["_", "Tractor beam ON", true],
+            ["^", "Pressor beam ON", true],
+            ["[ ]", "Shields down / up", true],
+            ["{ }", "Cloak on / off", true],
           ]}
         />
       </Section>
 
-      <Section title="Mouse Controls (Web Version)">
+      <Section title="Mouse Controls">
         <KeyTable
           rows={[
             ["Left click", "Fire torpedoes", true],

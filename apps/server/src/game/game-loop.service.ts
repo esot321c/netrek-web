@@ -325,14 +325,17 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
             this.firePhaser(ship, input.value & 0xff);
             break;
 
-          case InputCommand.SHIELD_TOGGLE:
-            ship.shieldsUp = !ship.shieldsUp;
-            // Raising shields interrupts bombing and beaming
+          case InputCommand.SHIELD_TOGGLE: {
+            const shieldVal = input.value & 0xff;
+            if (shieldVal === 1) ship.shieldsUp = true;
+            else if (shieldVal === 2) ship.shieldsUp = false;
+            else ship.shieldsUp = !ship.shieldsUp;
             if (ship.shieldsUp) {
               ship.bombing = false;
               ship.beaming = 0;
             }
             break;
+          }
 
           case InputCommand.REPAIR_TOGGLE:
             ship.repairMode = !ship.repairMode;
@@ -363,7 +366,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
             break;
 
           case InputCommand.CLOAK_TOGGLE:
-            this.toggleCloak(ship);
+            this.toggleCloak(ship, input.value & 0xff);
             break;
 
           case InputCommand.TRACTOR:
@@ -387,7 +390,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
             break;
 
           case InputCommand.DOCK:
-            this.toggleDock(ship);
+            // Reserved for SB docking permission toggle (future)
             break;
 
           case InputCommand.FIRE_PLASMA:
@@ -404,20 +407,48 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
   // -------------------------------------------------------------------------
 
   private tryOrbit(ship: ShipState): void {
-    if (ship.orbitPlanetId >= 0) return;
+    if (ship.orbitPlanetId >= 0 || ship.dockedAt >= 0) return;
     if (ship.speed > ORBIT_MAX_SPEED) return;
+
     const planets = this.gameService.state.planets;
-    let bestIdx = -1;
+    let bestPlanetIdx = -1;
     let bestDist = ORBIT_DIST + 1;
     for (let i = 0; i < planets.length; i++) {
       const d = distance(ship.x, ship.y, planets[i]!.x, planets[i]!.y);
       if (d < bestDist) {
         bestDist = d;
-        bestIdx = i;
+        bestPlanetIdx = i;
       }
     }
-    if (bestIdx >= 0) {
-      this.enterOrbit(ship, bestIdx);
+
+    if (ship.shipType !== ShipType.SB) {
+      const ships = this.gameService.state.ships;
+      let bestSbSlot = -1;
+      let bestSbDist = DOCK_DIST + 1;
+      for (let i = 0; i < ships.length; i++) {
+        const sb = ships[i]!;
+        if (
+          sb.status === ShipStatus.ALIVE &&
+          sb.shipType === ShipType.SB &&
+          sb.team === ship.team &&
+          sb.dockedShips.length < MAX_DOCK_SHIPS
+        ) {
+          const d = distance(ship.x, ship.y, sb.x, sb.y);
+          if (d < bestSbDist) {
+            bestSbDist = d;
+            bestSbSlot = i;
+          }
+        }
+      }
+
+      if (bestSbSlot >= 0 && bestSbDist < bestDist) {
+        this.dock(ship, this.gameService.state.ships[bestSbSlot]!);
+        return;
+      }
+    }
+
+    if (bestPlanetIdx >= 0) {
+      this.enterOrbit(ship, bestPlanetIdx);
     }
   }
 
@@ -571,6 +602,22 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
           continue;
         }
 
+        const dist = distance(ship.x, ship.y, target.x, target.y);
+
+        // Auto-dock: locked onto a friendly SB and within range
+        if (
+          target.shipType === ShipType.SB &&
+          target.team === ship.team &&
+          ship.shipType !== ShipType.SB &&
+          dist <= DOCK_DIST &&
+          ship.dockedAt < 0 &&
+          target.dockedShips.length < MAX_DOCK_SHIPS
+        ) {
+          this.dock(ship, target);
+          this.clearLock(ship);
+          continue;
+        }
+
         // Steer toward the player
         ship.desiredDirection = angleBetween(
           ship.x,
@@ -590,6 +637,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     for (let i = 0; i < ships.length; i++) {
       const ship = ships[i]!;
       if (ship.dockedAt < 0) continue;
+      if (ship.status !== ShipStatus.ALIVE) continue;
       const sb = ships[ship.dockedAt]!;
       if (sb.status !== ShipStatus.ALIVE) {
         this.undock(ship);
@@ -770,9 +818,6 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     const planet = this.gameService.state.planets[ship.orbitPlanetId];
     if (!planet) return;
 
-    // Must be enemy or neutral planet
-    if (planet.team === ship.team) return;
-
     ship.beaming = 2; // beam down
     ship.bombing = false;
     ship.beamCooldownTicks = BEAM_INTERVAL;
@@ -821,20 +866,19 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
           this.statReporter.recordArmiesBeamed(ship.playerId, 1);
         }
       } else {
-        // Beam down — drop army on enemy planet
+        // Beam down — drop army on planet (enemy, neutral, or friendly)
         if (ship.armies <= 0) {
-          ship.beaming = 0;
-          continue;
-        }
-        if (planet.team === ship.team) {
           ship.beaming = 0;
           continue;
         }
 
         ship.armies--;
 
-        if (planet.armies > 0) {
-          // One friendly army kills one enemy army
+        if (planet.team === ship.team) {
+          // Friendly planet — reinforce
+          planet.armies++;
+        } else if (planet.armies > 0) {
+          // Enemy/neutral — one friendly army kills one enemy army
           planet.armies--;
         } else {
           // Planet captured!
@@ -845,10 +889,8 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
             this.statReporter.recordPlanetTaken(ship.playerId);
           }
           this.gameService.recordSessionPlanetTaken(i);
-          ship.beaming = 0;
         }
 
-        // Check if no armies left and we're still beaming down
         if (ship.armies <= 0) {
           ship.beaming = 0;
         }
@@ -860,18 +902,29 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
   // Cloaking
   // -------------------------------------------------------------------------
 
-  private toggleCloak(ship: ShipState): void {
-    if (ship.cloaked) {
-      // Start uncloaking
+  private toggleCloak(ship: ShipState, mode = 0): void {
+    if (mode === 1) {
+      // Force cloak on
+      if (ship.cloaked || ship.uncloakTicks > 0) return;
+      ship.cloaked = true;
+      ship.tractorTarget = -1;
+      ship.pressorTarget = -1;
+    } else if (mode === 2) {
+      // Force cloak off
+      if (!ship.cloaked) return;
       ship.cloaked = false;
       ship.uncloakTicks = UNCLOAK_TICKS;
     } else {
-      // Cloak — can't cloak while uncloaking
-      if (ship.uncloakTicks > 0) return;
-      ship.cloaked = true;
-      // Cloaking disables tractor/pressor
-      ship.tractorTarget = -1;
-      ship.pressorTarget = -1;
+      // Toggle
+      if (ship.cloaked) {
+        ship.cloaked = false;
+        ship.uncloakTicks = UNCLOAK_TICKS;
+      } else {
+        if (ship.uncloakTicks > 0) return;
+        ship.cloaked = true;
+        ship.tractorTarget = -1;
+        ship.pressorTarget = -1;
+      }
     }
   }
 

@@ -12,6 +12,7 @@ export enum BotAIState {
   DEFEND = 4,
   OGG = 5,
   RETREAT = 6,
+  TAKE = 7,
 }
 
 export interface ChatMessage {
