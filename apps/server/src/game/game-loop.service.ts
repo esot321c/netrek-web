@@ -606,6 +606,9 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
             this.statReporter.recordArmiesBombed(ship.playerId, actual);
           }
           ship.kills += actual * KILLS_PER_BOMB;
+          for (let a = 0; a < actual; a++) {
+            this.gameService.recordSessionArmiesBombed(i);
+          }
         }
       }
     }
@@ -733,6 +736,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
           if (!ship.playerId.startsWith("bot:")) {
             this.statReporter.recordPlanetTaken(ship.playerId);
           }
+          this.gameService.recordSessionPlanetTaken(i);
           ship.beaming = 0;
         }
 
@@ -1399,6 +1403,9 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
           !ships[ship.lastDamagedBySlot]!.playerId.startsWith("bot:")
         ) {
           this.statReporter.recordKill(ships[ship.lastDamagedBySlot]!.playerId);
+        }
+        if (ship.lastDamagedBySlot >= 0) {
+          this.gameService.recordSessionKill(ship.lastDamagedBySlot);
         }
         ship.explodeTicks = EXPLOSION_DURATION_TICKS;
         ship.speed = 0;
