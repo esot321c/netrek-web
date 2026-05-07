@@ -21,6 +21,9 @@ let joinedCallback: ((data: { slot: number }) => void) | null = null;
 let chatCallback: ((msg: ChatMessage) => void) | null = null;
 let killCallback: ((event: KillEvent) => void) | null = null;
 let rosterCallback: ((roster: RosterMap) => void) | null = null;
+let gameWinCallback:
+  | ((data: { winningTeam: number; losingTeam: number; type: string }) => void)
+  | null = null;
 
 export function getSocket(): Socket | null {
   return socket;
@@ -67,6 +70,13 @@ export function connect(wsUrl: string, gameToken: string): Socket {
     rosterCallback?.(roster);
   });
 
+  socket.on(
+    "game_win",
+    (data: { winningTeam: number; losingTeam: number; type: string }) => {
+      gameWinCallback?.(data);
+    },
+  );
+
   return socket;
 }
 
@@ -107,6 +117,12 @@ export function onKill(cb: (event: KillEvent) => void): void {
 
 export function onRoster(cb: (roster: RosterMap) => void): void {
   rosterCallback = cb;
+}
+
+export function onGameWin(
+  cb: (data: { winningTeam: number; losingTeam: number; type: string }) => void,
+): void {
+  gameWinCallback = cb;
 }
 
 // ---------------------------------------------------------------------------

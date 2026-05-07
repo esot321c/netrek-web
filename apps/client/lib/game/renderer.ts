@@ -1100,6 +1100,22 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: ClientGameState): void {
     ctx.font = "14px monospace";
     ctx.textAlign = "center";
     ctx.fillText("T-MODE", w / 2, 16);
+
+    // Genocide / surrender timer
+    if (self.surrenderTimer > 0) {
+      const totalSec = Math.ceil(self.surrenderTimer / 10);
+      const min = Math.floor(totalSec / 60);
+      const sec = totalSec % 60;
+      const flash = Math.floor(Date.now() / 500) % 2 === 0;
+      ctx.fillStyle = flash ? "#ff0000" : "#cc0000";
+      ctx.font = "16px monospace";
+      ctx.fillText(
+        `SURRENDER IN ${min}:${String(sec).padStart(2, "0")}`,
+        w / 2,
+        34,
+      );
+    }
+
     ctx.textAlign = "start";
   }
 }

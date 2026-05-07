@@ -335,6 +335,7 @@ export interface ClientSelfExtra {
   lockType: number; // LockType enum value
   lockTargetId: number; // planet index or player slot (-1 when NONE)
   tmode: boolean;
+  surrenderTimer: number;
 }
 
 export interface ClientGameState {

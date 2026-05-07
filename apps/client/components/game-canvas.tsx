@@ -12,6 +12,7 @@ import {
   onChat,
   onKill,
   onRoster,
+  onGameWin,
   sendRespawn,
   sendInput,
 } from "@/lib/game/socket";
@@ -59,6 +60,13 @@ const TEAM_COLORS: Record<number, string> = {
   [Team.ORIONS]: "#44ffff",
 };
 
+const TEAM_NAMES: Record<number, string> = {
+  [Team.FEDERATION]: "Federation",
+  [Team.ROMULANS]: "Romulans",
+  [Team.KLINGONS]: "Klingons",
+  [Team.ORIONS]: "Orions",
+};
+
 /** Bottom panel height in pixels */
 const BOTTOM_PANEL_H = 280;
 
@@ -83,6 +91,11 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
     cooldownRemainingSec?: number;
   } | null>(null);
   const [respawnCountdown, setRespawnCountdown] = useState<number>(0);
+  const [gameWinData, setGameWinData] = useState<{
+    winningTeam: number;
+    losingTeam: number;
+    type: string;
+  } | null>(null);
 
   const handleResize = useCallback(() => {
     const canvas = canvasRef.current;
@@ -165,6 +178,11 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
     onRoster((roster) => {
       updateRoster(roster);
       setChatVersion((v) => v + 1);
+    });
+
+    onGameWin((data) => {
+      setGameWinData(data);
+      setTimeout(() => setGameWinData(null), 10_000);
     });
 
     onChatChange(() => {
@@ -506,6 +524,42 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
                   }}
                 >
                   Press r to cancel
+                </p>
+              </div>
+            </Overlay>
+          )}
+
+          {/* Game win/loss overlay */}
+          {gameWinData && (
+            <Overlay>
+              <div
+                style={{
+                  textAlign: "center",
+                  fontFamily: "monospace",
+                }}
+              >
+                <h2
+                  style={{
+                    color: TEAM_COLORS[gameWinData.winningTeam] ?? "#fff",
+                    fontSize: 28,
+                    marginBottom: 12,
+                  }}
+                >
+                  {TEAM_NAMES[gameWinData.winningTeam] ?? "Unknown"} WINS!
+                </h2>
+                <p style={{ color: "#aaa", fontSize: 16 }}>
+                  {gameWinData.type === "genocide"
+                    ? `${TEAM_NAMES[gameWinData.losingTeam] ?? "Enemy"} has been eliminated`
+                    : `${TEAM_NAMES[gameWinData.losingTeam] ?? "Enemy"} surrendered (timer expired)`}
+                </p>
+                <p
+                  style={{
+                    color: "#555",
+                    fontSize: 12,
+                    marginTop: 16,
+                  }}
+                >
+                  New game starting...
                 </p>
               </div>
             </Overlay>

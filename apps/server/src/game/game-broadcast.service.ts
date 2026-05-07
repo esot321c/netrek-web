@@ -163,7 +163,11 @@ export class GameBroadcastService {
   }
 
   @OnEvent(GAME_TICK_EVENT)
-  handleTick(data: { alertStatuses: AlertStatus[]; tmode: boolean }): void {
+  handleTick(data: {
+    alertStatuses: AlertStatus[];
+    tmode: boolean;
+    surrenderTimers: number[];
+  }): void {
     if (this.players.size === 0) return;
 
     const state = this.gameService.state;
@@ -182,6 +186,7 @@ export class GameBroadcastService {
         data.alertStatuses,
         state.planets,
         data.tmode,
+        data.surrenderTimers,
       );
 
       player.socket.volatile.emit("state", buf);

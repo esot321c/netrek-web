@@ -81,6 +81,7 @@ function makeSelf(overrides: Partial<ClientSelfExtra> = {}): ClientSelfExtra {
     lockType: 0,
     lockTargetId: -1,
     tmode: false,
+    surrenderTimer: 0,
     ...overrides,
   };
 }

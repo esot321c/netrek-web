@@ -117,10 +117,11 @@ export class StatsService {
   }
 
   async getMyStats(userId: string) {
-    const stats = await this.prisma.playerStats.findUnique({
-      where: { userId_serverId: { userId, serverId: "official" } },
+    const allStats = await this.prisma.playerStats.findMany({
+      where: { userId },
     });
-    if (!stats) {
+
+    if (allStats.length === 0) {
       return {
         totalKills: 0,
         totalDeaths: 0,
@@ -133,7 +134,35 @@ export class StatsService {
         rank: 0,
       };
     }
-    return stats;
+
+    const agg = {
+      totalKills: 0,
+      totalDeaths: 0,
+      totalWins: 0,
+      totalLosses: 0,
+      planetsTaken: 0,
+      armiesBombed: 0,
+      armiesBeamed: 0,
+      secondsPlayed: 0,
+      rank: 0,
+    };
+    for (const s of allStats) {
+      agg.totalKills += s.totalKills;
+      agg.totalDeaths += s.totalDeaths;
+      agg.totalWins += s.totalWins;
+      agg.totalLosses += s.totalLosses;
+      agg.planetsTaken += s.planetsTaken;
+      agg.armiesBombed += s.armiesBombed;
+      agg.armiesBeamed += s.armiesBeamed;
+      agg.secondsPlayed += s.secondsPlayed;
+    }
+    const di = calculateDI({
+      planetsTaken: agg.planetsTaken,
+      armiesBombed: agg.armiesBombed,
+      kills: agg.totalKills,
+    });
+    agg.rank = rankForDI(di);
+    return agg;
   }
 
   async getLeaderboard(serverId: string, limit: number = 20) {
