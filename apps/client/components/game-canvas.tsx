@@ -58,7 +58,7 @@ const TEAM_COLORS: Record<number, string> = {
 };
 
 /** Bottom panel height in pixels */
-const BOTTOM_PANEL_H = 140;
+const BOTTOM_PANEL_H = 280;
 
 interface GameCanvasProps {
   wsUrl: string;
@@ -69,11 +69,16 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const galCanvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
+  const respawnedAt = useRef<number>(0);
   const [connected, setConnected] = useState(false);
   const [phase, setPhase] = useState<"waiting" | "playing" | "dead">("waiting");
   const [chatVersion, setChatVersion] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
   const [infoTarget, setInfoTarget] = useState<string | null>(null);
+  const [respawnReject, setRespawnReject] = useState<{
+    reason: string;
+    cooldownRemainingSec?: number;
+  } | null>(null);
 
   const handleResize = useCallback(() => {
     const canvas = canvasRef.current;
@@ -119,11 +124,15 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
       pushSnapshot(state);
       processSounds(state);
 
-      // Check if my ship is dead → show respawn UI
       if (getMySlot() >= 0) {
         const myShip = state.ships.find((s) => s.slotIndex === getMySlot());
         if (!myShip || myShip.status === 2) {
-          setPhase("dead");
+          if (Date.now() - respawnedAt.current > 2000) {
+            setPhase("dead");
+            setRespawnReject(null);
+          }
+        } else {
+          setPhase("playing");
         }
       }
     });
@@ -188,8 +197,18 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
   }, [handleResize, wsUrl, gameToken]);
 
   const handleRespawn = (shipType: number) => {
-    sendRespawn(shipType);
-    setPhase("playing");
+    sendRespawn(shipType, (result) => {
+      if (result.ok) {
+        respawnedAt.current = Date.now();
+        setRespawnReject(null);
+        setPhase("playing");
+      } else {
+        setRespawnReject({
+          reason: result.reason ?? "unknown",
+          cooldownRemainingSec: result.cooldownRemainingSec,
+        });
+      }
+    });
   };
 
   const snapshot = getLatestSnapshot();
@@ -356,6 +375,27 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
                     </button>
                   ))}
                 </div>
+                {respawnReject && (
+                  <p
+                    style={{
+                      color: "#ff4444",
+                      fontFamily: "monospace",
+                      fontSize: 12,
+                      marginTop: 8,
+                    }}
+                  >
+                    {respawnReject.reason === "rank" &&
+                      "Requires Commander rank to pilot Starbase"}
+                    {respawnReject.reason === "sb_active" &&
+                      "Starbase already active on your team"}
+                    {respawnReject.reason === "planets" &&
+                      "Team needs 5+ planets for Starbase"}
+                    {respawnReject.reason === "sb_cooldown" &&
+                      `Starbase cooldown: ${Math.floor((respawnReject.cooldownRemainingSec ?? 0) / 60)}:${String((respawnReject.cooldownRemainingSec ?? 0) % 60).padStart(2, "0")}`}
+                    {respawnReject.reason === "torps" &&
+                      "Wait for torpedoes to resolve"}
+                  </p>
+                )}
               </div>
             </Overlay>
           )}

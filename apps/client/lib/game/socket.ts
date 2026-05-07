@@ -119,9 +119,16 @@ export function sendInput(command: InputCommand, value: number): void {
   socket.emit("input", buf);
 }
 
-export function sendRespawn(shipType: number): void {
+export function sendRespawn(
+  shipType: number,
+  callback?: (result: {
+    ok: boolean;
+    reason?: string;
+    cooldownRemainingSec?: number;
+  }) => void,
+): void {
   if (!socket) return;
-  socket.emit("respawn", { shipType });
+  socket.emit("respawn", { shipType }, callback);
 }
 
 export function sendChat(
