@@ -15,6 +15,7 @@ const prevShipStatuses = new Map<number, ShipStatus>();
 let prevShieldsUp = false;
 let prevAlertStatus = AlertStatus.GREEN;
 let prevTractoring = false;
+let prevPlasmaCount = 0;
 
 const SOUNDS = [
   "nt_phaser",
@@ -29,6 +30,8 @@ const SOUNDS = [
   "nt_enter_ship",
   "nt_red_alert",
   "nt_tractor",
+  "nt_plasma",
+  "nt_plasma_other",
 ] as const;
 
 type SoundName = (typeof SOUNDS)[number];
@@ -162,6 +165,18 @@ export function processSounds(state: ClientGameState): void {
     }
     prevTractoring = myShip.tractoring;
   }
+
+  // --- Plasma fire ---
+  const currentPlasmaCount = state.plasmas.length;
+  if (currentPlasmaCount > prevPlasmaCount) {
+    const myPlasma = state.plasmas.find((p) => p.ownerSlot === mySlot);
+    if (myPlasma) {
+      play("nt_plasma", 0.6);
+    } else {
+      play("nt_plasma_other", 0.4);
+    }
+  }
+  prevPlasmaCount = currentPlasmaCount;
 }
 
 export function resetSound(): void {
@@ -171,4 +186,5 @@ export function resetSound(): void {
   prevShieldsUp = false;
   prevAlertStatus = AlertStatus.GREEN;
   prevTractoring = false;
+  prevPlasmaCount = 0;
 }
