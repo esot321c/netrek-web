@@ -28,9 +28,14 @@ let lastMouseX = 0; // last known mouse position (client pixels)
 let lastMouseY = 0;
 
 let chatChangeCallback: (() => void) | null = null;
+let refitCallback: (() => void) | null = null;
 
 export function onChatChange(cb: () => void): void {
   chatChangeCallback = cb;
+}
+
+export function onRefitKey(cb: () => void): void {
+  refitCallback = cb;
 }
 
 function notifyChatChange(): void {
@@ -265,6 +270,9 @@ function handleKeyDown(e: KeyboardEvent): void {
       sendInput(InputCommand.SHIELD_TOGGLE, 0);
       break;
     case "r":
+      e.preventDefault();
+      refitCallback?.();
+      break;
     case "R":
       e.preventDefault();
       sendInput(InputCommand.REPAIR_TOGGLE, 0);

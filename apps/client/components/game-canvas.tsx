@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { ShipType, Team } from "@netrek/shared";
+import { ShipType, Team, InputCommand } from "@netrek/shared";
 import {
   connect,
   disconnect,
@@ -13,6 +13,7 @@ import {
   onKill,
   onRoster,
   sendRespawn,
+  sendInput,
 } from "@/lib/game/socket";
 import {
   pushSnapshot,
@@ -21,7 +22,7 @@ import {
   getLatestSnapshot,
   resetState,
 } from "@/lib/game/state";
-import { setupInput, onChatChange } from "@/lib/game/input";
+import { setupInput, onChatChange, onRefitKey } from "@/lib/game/input";
 import { initRenderer, renderFrame } from "@/lib/game/renderer";
 import {
   initSound,
@@ -75,6 +76,7 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
   const [chatVersion, setChatVersion] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
   const [infoTarget, setInfoTarget] = useState<string | null>(null);
+  const [showRefit, setShowRefit] = useState(false);
   const [respawnReject, setRespawnReject] = useState<{
     reason: string;
     cooldownRemainingSec?: number;
@@ -173,6 +175,10 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
       }
     }
     window.addEventListener("keydown", handlePanelKeys);
+
+    onRefitKey(() => {
+      setShowRefit((v) => !v);
+    });
 
     connect(wsUrl, gameToken);
 
@@ -285,7 +291,8 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
               <HelpRow k="D" desc="Detonate own torps" />
               <HelpRow k="T" desc="Tractor beam toggle" />
               <HelpRow k="y" desc="Pressor beam toggle" />
-              <HelpRow k="r" desc="Toggle repair mode" />
+              <HelpRow k="r" desc="Refit ship (orbit homeworld)" />
+              <HelpRow k="R" desc="Toggle repair mode" />
               <div style={{ color: "#ffff00", marginTop: 8, marginBottom: 4 }}>
                 Planet Operations
               </div>
@@ -396,6 +403,63 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
                       "Wait for torpedoes to resolve"}
                   </p>
                 )}
+              </div>
+            </Overlay>
+          )}
+
+          {/* Refit overlay (r key while alive) */}
+          {showRefit && phase === "playing" && (
+            <Overlay>
+              <div style={{ textAlign: "center" }}>
+                <h2
+                  style={{
+                    color: "#fff",
+                    marginBottom: 20,
+                    fontFamily: "monospace",
+                  }}
+                >
+                  REFIT — Select Ship (orbit homeworld)
+                </h2>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                    alignItems: "center",
+                  }}
+                >
+                  {SHIPS.map((ship) => (
+                    <button
+                      key={ship.type}
+                      onClick={() => {
+                        sendInput(InputCommand.REFIT, ship.type);
+                        setShowRefit(false);
+                      }}
+                      style={{
+                        background: "#222",
+                        color: "#fff",
+                        border: "1px solid #444",
+                        padding: "6px 24px",
+                        fontFamily: "monospace",
+                        fontSize: 14,
+                        cursor: "pointer",
+                        width: 200,
+                      }}
+                    >
+                      [{ship.key}] {ship.name}
+                    </button>
+                  ))}
+                </div>
+                <p
+                  style={{
+                    color: "#555",
+                    fontFamily: "monospace",
+                    fontSize: 12,
+                    marginTop: 12,
+                  }}
+                >
+                  Press r to cancel
+                </p>
               </div>
             </Overlay>
           )}
