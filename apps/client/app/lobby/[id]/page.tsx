@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { apiFetch, joinServer } from "@/lib/api/client";
 import { Team, ShipType } from "@netrek/shared";
+import StatsBadge from "@/components/stats-badge";
 
 interface ServerDetail {
   id: string;
@@ -70,7 +71,15 @@ export default function GameDetailPage({
     const load = async () => {
       try {
         const data = await apiFetch<ServerDetail>(`/servers/${id}`);
-        setServer(data);
+        setServer((prev) => {
+          if (
+            prev &&
+            prev.playerCount === data.playerCount &&
+            prev.gamePhase === data.gamePhase
+          )
+            return prev;
+          return data;
+        });
         setFetchError(null);
       } catch (e) {
         setFetchError((e as Error).message);
@@ -118,6 +127,13 @@ export default function GameDetailPage({
         >
           &larr; Back to Server Browser
         </a>
+
+        {/* Stats badge */}
+        {user && (
+          <div className="mt-4">
+            <StatsBadge username={user.name} />
+          </div>
+        )}
 
         {/* Server info */}
         {fetchError && (
