@@ -28,6 +28,7 @@ export class GameBroadcastService {
   private server: Server | null = null;
   private readonly players = new Map<string, ConnectedPlayer>();
   private readonly botNames = new Map<number, string>();
+  private lastRosterTick = 0;
 
   constructor(private readonly gameService: GameService) {}
 
@@ -86,6 +87,8 @@ export class GameBroadcastService {
           name: player.username,
           team: ship.team,
           shipType: ship.shipType,
+          kills: ship.kills,
+          rank: this.gameService.getEffectiveRank(player.slot),
         };
       }
     }
@@ -97,6 +100,8 @@ export class GameBroadcastService {
           name,
           team: ship.team,
           shipType: ship.shipType,
+          kills: ship.kills,
+          rank: 0,
         };
       }
     }
@@ -153,6 +158,8 @@ export class GameBroadcastService {
     for (const player of this.players.values()) {
       player.socket.emit("kill", resolved);
     }
+
+    this.broadcastRoster();
   }
 
   @OnEvent(GAME_TICK_EVENT)
@@ -177,6 +184,11 @@ export class GameBroadcastService {
       );
 
       player.socket.volatile.emit("state", buf);
+    }
+
+    if (state.currentTick - this.lastRosterTick >= 50) {
+      this.lastRosterTick = state.currentTick;
+      this.broadcastRoster();
     }
   }
 }

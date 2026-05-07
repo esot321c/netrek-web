@@ -2,7 +2,7 @@
 
 import type { ClientGameState } from "@netrek/shared";
 import { ShipStatus } from "@netrek/shared";
-import { TEAM_NAMES_SHORT, SHIP_NAMES } from "@netrek/shared";
+import { TEAM_NAMES_SHORT, SHIP_NAMES, rankAbbrev } from "@netrek/shared";
 import { getRoster } from "@/lib/game/chat";
 
 const TEAM_COLORS: Record<number, string> = {
@@ -62,11 +62,11 @@ export default function PlayerListPanel({
         const teamChar = (TEAM_NAMES_SHORT[ship.team] ?? "??").slice(0, 2);
         const slotHex = ship.slotIndex.toString(16);
         const typeTag = `${teamChar}${slotHex}`;
-        const rank = "Ens";
+        const rank = rankAbbrev(entry?.rank ?? 0);
         const name = (entry?.name ?? ship.slotIndex.toString())
           .padEnd(16, " ")
           .slice(0, 16);
-        const kills = "0.00";
+        const kills = (entry?.kills ?? 0).toFixed(2);
         const login = entry?.name ?? "";
 
         return (
