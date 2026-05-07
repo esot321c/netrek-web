@@ -48,6 +48,8 @@ export enum InputCommand {
   REFIT = 15,
   LOCK = 16,
   DETONATE_SELF = 17,
+  DOCK = 18,
+  FIRE_PLASMA = 19,
 }
 
 /** Lock target type for autopilot navigation */
@@ -182,6 +184,10 @@ export interface ShipState {
 
   // Owning player
   playerId: string;
+
+  // Docking state
+  dockedAt: number; // SB slot index this ship is docked at (-1 = not docked)
+  dockedShips: number[]; // slot indices of ships docked at this SB (empty for non-SBs)
 }
 
 export interface TorpState {
@@ -263,6 +269,7 @@ export interface ClientShip {
   tractorTarget: number; // slot of target (-1 = none)
   pressorTarget: number; // slot of target (-1 = none)
   alertStatus: AlertStatus;
+  docked: boolean;
 }
 
 export interface ClientTorp {

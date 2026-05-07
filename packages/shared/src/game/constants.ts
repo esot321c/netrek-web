@@ -73,6 +73,15 @@ export const YELLOW_ALERT_DIST = Math.floor(GALAXY_WIDTH / 7);
 export const RED_ALERT_DIST = Math.floor(GALAXY_WIDTH / 20);
 
 // ---------------------------------------------------------------------------
+// Docking
+// ---------------------------------------------------------------------------
+
+export const MAX_DOCK_SHIPS = 4;
+export const DOCK_DIST = 900; // same as ORBIT_DIST
+export const DOCK_SHIELD_REPAIR_MULT = 5; // 5x normal shield repair while docked
+export const DOCK_FUEL_RECHARGE_MULT = 12; // 12x normal fuel recharge while docked
+
+// ---------------------------------------------------------------------------
 // Planets
 // ---------------------------------------------------------------------------
 

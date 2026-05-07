@@ -392,6 +392,7 @@ export function deserializeGameState(buffer: ArrayBuffer): ClientGameState {
       ...flags2,
       tractorTarget,
       pressorTarget,
+      docked: false, // updated via self extra for own ship when docking is implemented
     });
   }
 
