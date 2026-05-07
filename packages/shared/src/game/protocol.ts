@@ -4,6 +4,7 @@ import {
   SHIP_STATS,
   PLANET_DEFS,
   CLOAK_FUZZ_RANGE,
+  MAX_PLASMAS,
 } from "./constants";
 import {
   AlertStatus,
@@ -13,6 +14,7 @@ import {
   type ClientExplosion,
   type ClientGameState,
   type ClientPhaser,
+  type ClientPlasma,
   type ClientPlanet,
   type ClientSelfExtra,
   type ClientShip,
@@ -22,6 +24,7 @@ import {
   type TorpState,
   type PhaserState,
   type ExplosionState,
+  type PlasmaState,
   type PlanetState,
 } from "./types";
 
@@ -36,11 +39,12 @@ export const MSG_PLAYER_INPUT = 0x02;
 // Binary layout sizes
 // ---------------------------------------------------------------------------
 
-const HEADER_SIZE = 12; // added planetCount byte
+const HEADER_SIZE = 13; // added plasmaCount byte
 const SHIP_SIZE = 19; // 17 + tractorTarget(1) + pressorTarget(1)
 const TORP_SIZE = 6;
 const PHASER_SIZE = 8;
 const EXPLOSION_SIZE = 6;
+const PLASMA_SIZE = 7; // alive(1) + x(2) + y(2) + ownerSlot(1) + team(1)
 const PLANET_BINARY_SIZE = 4; // planetId(1) + team(1) + armies(1) + features(1)
 const SELF_EXTRA_SIZE = 14;
 const INPUT_SIZE = 4;
@@ -106,8 +110,12 @@ function packFlags(
   );
 }
 
-function packFlags2(pressoring: boolean, beaming: number): number {
-  return (pressoring ? 1 : 0) | ((beaming & 0x03) << 1);
+function packFlags2(
+  pressoring: boolean,
+  beaming: number,
+  docked: boolean,
+): number {
+  return (pressoring ? 1 : 0) | ((beaming & 0x03) << 1) | (docked ? 0x08 : 0);
 }
 
 function unpackFlags(flags: number) {
@@ -126,6 +134,7 @@ function unpackFlags2(flags: number) {
   return {
     pressoring: (flags & 1) !== 0,
     beaming: (flags >> 1) & 0x03,
+    docked: (flags & 0x08) !== 0,
   };
 }
 
@@ -141,6 +150,7 @@ export function serializeGameState(
   torps: TorpState[],
   phasers: PhaserState[],
   explosions: ExplosionState[],
+  plasmas: PlasmaState[],
   alertStatuses: AlertStatus[],
   planets: PlanetState[],
   tmode = false,
@@ -169,12 +179,18 @@ export function serializeGameState(
     if (explosions[i]!.alive) aliveExplosions.push(explosions[i]!);
   }
 
+  const alivePlasmas: PlasmaState[] = [];
+  for (let i = 0; i < plasmas.length; i++) {
+    if (plasmas[i]!.alive) alivePlasmas.push(plasmas[i]!);
+  }
+
   const totalSize =
     HEADER_SIZE +
     aliveShips.length * SHIP_SIZE +
     aliveTorps.length * TORP_SIZE +
     alivePhasers.length * PHASER_SIZE +
     aliveExplosions.length * EXPLOSION_SIZE +
+    alivePlasmas.length * PLASMA_SIZE +
     planets.length * PLANET_BINARY_SIZE +
     SELF_EXTRA_SIZE;
 
@@ -182,7 +198,7 @@ export function serializeGameState(
   const dv = new DataView(buf);
   let offset = 0;
 
-  // Header (12 bytes)
+  // Header (13 bytes)
   dv.setUint8(offset++, MSG_GAME_STATE);
   dv.setUint32(offset, tick, true);
   offset += 4;
@@ -193,6 +209,7 @@ export function serializeGameState(
   dv.setUint8(offset++, alivePhasers.length);
   dv.setUint8(offset++, aliveExplosions.length);
   dv.setUint8(offset++, planets.length);
+  dv.setUint8(offset++, alivePlasmas.length);
 
   // Ships
   for (let i = 0; i < aliveShips.length; i++) {
@@ -246,7 +263,10 @@ export function serializeGameState(
         s.tractorTarget >= 0,
       ),
     );
-    dv.setUint8(offset++, packFlags2(s.pressorTarget >= 0, s.beaming));
+    dv.setUint8(
+      offset++,
+      packFlags2(s.pressorTarget >= 0, s.beaming, s.dockedAt >= 0),
+    );
     // Tractor/pressor target slots (0xFF = none)
     dv.setUint8(offset++, s.tractorTarget >= 0 ? s.tractorTarget : 0xff);
     dv.setUint8(offset++, s.pressorTarget >= 0 ? s.pressorTarget : 0xff);
@@ -285,6 +305,18 @@ export function serializeGameState(
     offset += 2;
     dv.setUint16(offset, Math.min(65535, Math.round(e.radius)), true);
     offset += 2;
+  }
+
+  // Plasmas
+  for (let i = 0; i < alivePlasmas.length; i++) {
+    const p = alivePlasmas[i]!;
+    dv.setUint8(offset++, 1); // alive flag
+    dv.setUint16(offset, gameToU16X(p.x), true);
+    offset += 2;
+    dv.setUint16(offset, gameToU16Y(p.y), true);
+    offset += 2;
+    dv.setUint8(offset++, p.ownerSlot);
+    dv.setUint8(offset++, p.team);
   }
 
   // Planets (4 bytes each: planetId, team, armies, features)
@@ -337,7 +369,7 @@ export function deserializeGameState(buffer: ArrayBuffer): ClientGameState {
   const dv = new DataView(buffer);
   let offset = 0;
 
-  // Header (12 bytes)
+  // Header (13 bytes)
   offset++; // skip messageType
   const tick = dv.getUint32(offset, true);
   offset += 4;
@@ -348,6 +380,7 @@ export function deserializeGameState(buffer: ArrayBuffer): ClientGameState {
   const phaserCount = dv.getUint8(offset++);
   const explosionCount = dv.getUint8(offset++);
   const planetCount = dv.getUint8(offset++);
+  const plasmaCount = dv.getUint8(offset++);
 
   // Ships
   const ships: ClientShip[] = [];
@@ -392,7 +425,6 @@ export function deserializeGameState(buffer: ArrayBuffer): ClientGameState {
       ...flags2,
       tractorTarget,
       pressorTarget,
-      docked: false, // updated via self extra for own ship when docking is implemented
     });
   }
 
@@ -432,6 +464,19 @@ export function deserializeGameState(buffer: ArrayBuffer): ClientGameState {
     const radius = dv.getUint16(offset, true);
     offset += 2;
     explosions.push({ x, y, radius });
+  }
+
+  // Plasmas
+  const plasmas: ClientPlasma[] = [];
+  for (let i = 0; i < plasmaCount; i++) {
+    offset++; // skip alive flag
+    const x = u16ToGameX(dv.getUint16(offset, true));
+    offset += 2;
+    const y = u16ToGameY(dv.getUint16(offset, true));
+    offset += 2;
+    const ownerSlot = dv.getUint8(offset++);
+    const plasmaTeam = dv.getUint8(offset++);
+    plasmas.push({ x, y, ownerSlot, team: plasmaTeam });
   }
 
   // Planets
@@ -477,7 +522,7 @@ export function deserializeGameState(buffer: ArrayBuffer): ClientGameState {
     torps,
     phasers,
     explosions,
-    plasmas: [], // populated when plasma torpedo implementation is added
+    plasmas,
     planets,
     self: {
       kills: selfKills,

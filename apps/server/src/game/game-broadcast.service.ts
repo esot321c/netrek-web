@@ -178,6 +178,7 @@ export class GameBroadcastService {
         state.torps,
         state.phasers,
         state.explosions,
+        state.plasmas,
         data.alertStatuses,
         state.planets,
         data.tmode,

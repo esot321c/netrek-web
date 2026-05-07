@@ -316,6 +316,7 @@ export class BotManagerService {
         this.gameState.torps,
         this.gameState.phasers,
         this.gameState.explosions,
+        this.gameState.plasmas,
         this.alertStatuses,
         this.gameState.planets,
         this.tmode,
