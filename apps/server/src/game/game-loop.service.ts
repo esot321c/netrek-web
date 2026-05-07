@@ -84,6 +84,7 @@ import {
 import { GameService } from "./game.service";
 import { BotManagerService } from "./bot";
 import { loadBotConfig, type BotConfig } from "./bot/bot-config";
+import { StatReporterService } from "../registration/stat-reporter.service";
 
 import {
   GAME_TICK_EVENT,
@@ -121,6 +122,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     private readonly gameService: GameService,
     private readonly eventEmitter: EventEmitter2,
     private readonly botManager: BotManagerService,
+    private readonly statReporter: StatReporterService,
   ) {
     this.botConfig = loadBotConfig();
   }
@@ -600,6 +602,9 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
         const actual = Math.min(destroyed, planet.armies - floor);
         if (actual > 0) {
           planet.armies -= actual;
+          if (!ship.playerId.startsWith("bot:")) {
+            this.statReporter.recordArmiesBombed(ship.playerId, actual);
+          }
           ship.kills += actual * KILLS_PER_BOMB;
         }
       }
@@ -701,6 +706,9 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
         }
         planet.armies--;
         ship.armies++;
+        if (!ship.playerId.startsWith("bot:")) {
+          this.statReporter.recordArmiesBeamed(ship.playerId, 1);
+        }
       } else {
         // Beam down — drop army on enemy planet
         if (ship.armies <= 0) {
@@ -722,6 +730,9 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
           planet.team = ship.team;
           planet.armies = 1;
           ship.kills += KILLS_PER_CAPTURE;
+          if (!ship.playerId.startsWith("bot:")) {
+            this.statReporter.recordPlanetTaken(ship.playerId);
+          }
           ship.beaming = 0;
         }
 
@@ -1371,6 +1382,16 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
           armiesLost,
           tick: state.currentTick,
         } satisfies KillEvent);
+        if (!ship.playerId.startsWith("bot:")) {
+          this.statReporter.recordDeath(ship.playerId);
+        }
+        if (
+          ship.lastDamagedBySlot >= 0 &&
+          ships[ship.lastDamagedBySlot] &&
+          !ships[ship.lastDamagedBySlot]!.playerId.startsWith("bot:")
+        ) {
+          this.statReporter.recordKill(ships[ship.lastDamagedBySlot]!.playerId);
+        }
         ship.explodeTicks = EXPLOSION_DURATION_TICKS;
         ship.speed = 0;
         ship.desiredSpeed = 0;
