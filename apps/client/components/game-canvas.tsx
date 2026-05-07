@@ -81,6 +81,7 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
     reason: string;
     cooldownRemainingSec?: number;
   } | null>(null);
+  const [respawnCountdown, setRespawnCountdown] = useState<number>(0);
 
   const handleResize = useCallback(() => {
     const canvas = canvasRef.current;
@@ -132,6 +133,7 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
           if (Date.now() - respawnedAt.current > 2000) {
             setPhase("dead");
             setRespawnReject(null);
+            setRespawnCountdown(3);
           }
         } else {
           setPhase("playing");
@@ -202,12 +204,23 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
     };
   }, [handleResize, wsUrl, gameToken]);
 
+  useEffect(() => {
+    if (respawnCountdown <= 0) return;
+    const timer = setTimeout(() => {
+      setRespawnCountdown((v) => Math.max(0, v - 1));
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [respawnCountdown]);
+
   const handleRespawn = (shipType: number) => {
     sendRespawn(shipType, (result) => {
       if (result.ok) {
         respawnedAt.current = Date.now();
         setRespawnReject(null);
+        setRespawnCountdown(0);
         setPhase("playing");
+      } else if (result.reason === "respawn_delay") {
+        setRespawnCountdown(Math.ceil(result.remainingSec ?? 0));
       } else {
         setRespawnReject({
           reason: result.reason ?? "unknown",
@@ -355,6 +368,18 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
                 >
                   DESTROYED — Select Ship to Respawn
                 </h2>
+                {respawnCountdown > 0 && (
+                  <p
+                    style={{
+                      color: "#ffff00",
+                      fontFamily: "monospace",
+                      fontSize: 16,
+                      marginBottom: 12,
+                    }}
+                  >
+                    Respawn in {respawnCountdown}...
+                  </p>
+                )}
                 <div
                   style={{
                     display: "flex",
@@ -367,14 +392,16 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
                     <button
                       key={ship.type}
                       onClick={() => handleRespawn(ship.type)}
+                      disabled={respawnCountdown > 0}
                       style={{
-                        background: "#222",
-                        color: "#fff",
+                        background: respawnCountdown > 0 ? "#111" : "#222",
+                        color: respawnCountdown > 0 ? "#555" : "#fff",
                         border: "1px solid #444",
                         padding: "6px 24px",
                         fontFamily: "monospace",
                         fontSize: 14,
-                        cursor: "pointer",
+                        cursor:
+                          respawnCountdown > 0 ? "not-allowed" : "pointer",
                         width: 200,
                       }}
                     >

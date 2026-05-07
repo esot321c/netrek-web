@@ -125,6 +125,7 @@ export function sendRespawn(
     ok: boolean;
     reason?: string;
     cooldownRemainingSec?: number;
+    remainingSec?: number;
   }) => void,
 ): void {
   if (!socket) return;
