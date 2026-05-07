@@ -1,4 +1,4 @@
-import { InputCommand, LockType, ShipStatus } from "@netrek/shared";
+import { InputCommand, LockType, ShipStatus, ShipType } from "@netrek/shared";
 import { sendInput, sendChat } from "./socket";
 import { getMySlot, getLatestSnapshot } from "./state";
 import {
@@ -317,6 +317,48 @@ function handleKeyDown(e: KeyboardEvent): void {
       e.preventDefault();
       lockNearestEntity();
       break;
+    case "*": {
+      e.preventDefault();
+      const snap = getLatestSnapshot();
+      if (!snap) break;
+      const myShipState = snap.ships.find((s) => s.slotIndex === getMySlot());
+      if (!myShipState) break;
+      // Find friendly SB
+      for (const s of snap.ships) {
+        if (
+          s.team === myShipState.team &&
+          s.shipType === ShipType.SB &&
+          s.status === ShipStatus.ALIVE
+        ) {
+          // Lock onto SB
+          sendInput(InputCommand.LOCK, (LockType.PLAYER << 8) | s.slotIndex);
+          // Set max warp
+          sendInput(InputCommand.SET_SPEED, 99);
+          break;
+        }
+      }
+      break;
+    }
+    case "f": {
+      e.preventDefault();
+      if (!canvas) break;
+      const rect = canvas.getBoundingClientRect();
+      const mx = lastMouseX - rect.left;
+      const my = lastMouseY - rect.top;
+      const gx = viewportCenterX + (mx - canvas.width / 2) / viewportScale;
+      const gy = viewportCenterY + (my - canvas.height / 2) / viewportScale;
+      const snap2 = getLatestSnapshot();
+      if (!snap2) break;
+      const me = snap2.ships.find((s) => s.slotIndex === getMySlot());
+      if (!me) break;
+      const dx = gx - me.x;
+      const dy = gy - me.y;
+      const angle = Math.atan2(dx, -dy);
+      const dir =
+        ((Math.round((angle / (2 * Math.PI)) * 256) % 256) + 256) % 256;
+      sendInput(InputCommand.FIRE_PLASMA, dir);
+      break;
+    }
   }
 }
 
