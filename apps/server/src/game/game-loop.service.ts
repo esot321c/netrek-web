@@ -963,6 +963,11 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     // Validate ship type
     if (shipTypeValue < 0 || shipTypeValue > ShipType.SB) return;
 
+    if (shipTypeValue === ShipType.SB) {
+      const sbCheck = this.gameService.checkSbGates(ship.slotIndex, ship.team);
+      if (!sbCheck.ok) return;
+    }
+
     ship.refitTicks = REFIT_TICKS;
     ship.refitShipType = shipTypeValue;
     ship.speed = 0;
@@ -1367,6 +1372,9 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
 
         // Ship dies
         ship.status = ShipStatus.EXPLODING;
+        if (ship.shipType === ShipType.SB) {
+          this.gameService.startSbCooldown(ship.team);
+        }
         const armiesLost = ship.armies;
         const killerSlot = ship.lastDamagedBySlot;
         const killerShip = killerSlot >= 0 ? ships[killerSlot] : undefined;
@@ -1629,6 +1637,8 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     this.tmode = false;
     this.winningTeam = -1;
     this.surrenderTimers.fill(0);
+    this.gameService.sbCooldownExpiresTick[Team.FEDERATION] = 0;
+    this.gameService.sbCooldownExpiresTick[Team.ROMULANS] = 0;
     this.botManager.resetForNewGame();
     this.eventEmitter.emit(GAME_RESET_EVENT);
     this.logger.log("Game reset complete");
