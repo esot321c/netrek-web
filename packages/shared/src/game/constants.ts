@@ -82,6 +82,22 @@ export const DOCK_SHIELD_REPAIR_MULT = 5; // 5x normal shield repair while docke
 export const DOCK_FUEL_RECHARGE_MULT = 12; // 12x normal fuel recharge while docked
 
 // ---------------------------------------------------------------------------
+// Plasma torpedoes
+// ---------------------------------------------------------------------------
+
+export const MAX_PLASMAS = 16; // one per possible player slot
+export const PLASMA_SPEED = 5;
+export const PLASMA_DAMAGE = 150;
+export const PLASMA_SPLASH_RADIUS = 1500;
+export const PLASMA_FUEL_COST = 2000;
+export const PLASMA_HEAT = 50;
+export const PLASMA_LIFETIME = 60; // 6 seconds at 10Hz
+export const PLASMA_TURN_RATE = 4; // direction units per tick
+export const PLASMA_MIN_KILLS = 2; // need 2+ kills to fire
+export const PLASMA_HIT_RADIUS = 200; // collision radius for phaser/torp counterplay
+export const PLASMA_LOCK_RANGE = 6000; // max range to acquire target on fire
+
+// ---------------------------------------------------------------------------
 // Planets
 // ---------------------------------------------------------------------------
 

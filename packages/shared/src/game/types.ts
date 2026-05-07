@@ -223,6 +223,17 @@ export interface ExplosionState {
   ticksRemaining: number;
 }
 
+export interface PlasmaState {
+  alive: boolean;
+  ownerSlot: number;
+  team: Team;
+  x: number;
+  y: number;
+  direction: number; // 0-255
+  targetSlot: number; // -1 if lost tracking
+  ticksRemaining: number;
+}
+
 export interface PlanetState {
   planetId: number; // 0-39
   x: number;
@@ -293,6 +304,13 @@ export interface ClientExplosion {
   radius: number;
 }
 
+export interface ClientPlasma {
+  x: number;
+  y: number;
+  ownerSlot: number;
+  team: Team;
+}
+
 export interface ClientPlanet {
   planetId: number;
   x: number;
@@ -326,6 +344,7 @@ export interface ClientGameState {
   torps: ClientTorp[];
   phasers: ClientPhaser[];
   explosions: ClientExplosion[];
+  plasmas: ClientPlasma[];
   planets: ClientPlanet[];
   self: ClientSelfExtra;
 }

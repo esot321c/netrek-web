@@ -477,6 +477,7 @@ export function deserializeGameState(buffer: ArrayBuffer): ClientGameState {
     torps,
     phasers,
     explosions,
+    plasmas: [], // populated when plasma torpedo implementation is added
     planets,
     self: {
       kills: selfKills,
