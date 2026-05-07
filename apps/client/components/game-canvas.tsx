@@ -132,9 +132,13 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
         const myShip = state.ships.find((s) => s.slotIndex === getMySlot());
         if (!myShip || myShip.status === 2) {
           if (Date.now() - respawnedAt.current > 2000) {
-            setPhase("dead");
-            setRespawnReject(null);
-            setRespawnCountdown(3);
+            setPhase((prev) => {
+              if (prev !== "dead") {
+                setRespawnReject(null);
+                setRespawnCountdown(3);
+              }
+              return "dead";
+            });
           }
         } else {
           setPhase("playing");
@@ -181,6 +185,12 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
     window.addEventListener("keydown", handlePanelKeys);
 
     onRefitKey(() => {
+      const snap = getLatestSnapshot();
+      if (!snap) return;
+      const myShip = snap.ships.find((s) => s.slotIndex === getMySlot());
+      if (!myShip) return;
+      const homeworldIdx = myShip.team * 10;
+      if (snap.self.orbitPlanetId !== homeworldIdx) return;
       setShowRefit((v) => !v);
     });
 
