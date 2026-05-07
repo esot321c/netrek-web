@@ -1,18 +1,25 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { OnEvent } from "@nestjs/event-emitter";
 import { Server, Socket } from "socket.io";
-import { serializeGameState } from "@netrek/shared";
+import {
+  serializeGameState,
+  type RosterEntry,
+  type RosterMap,
+  type KillEvent,
+} from "@netrek/shared";
+import type { AlertStatus } from "@netrek/shared";
 import { GameService } from "./game.service";
 import {
-  GameLoopService,
   GAME_TICK_EVENT,
   GAME_WIN_EVENT,
-} from "./game-loop.service";
+  GAME_KILL_EVENT,
+} from "./game-events";
 
 interface ConnectedPlayer {
   socket: Socket;
   slot: number;
   userId: string;
+  username: string;
 }
 
 @Injectable()
@@ -20,11 +27,10 @@ export class GameBroadcastService {
   private readonly logger = new Logger(GameBroadcastService.name);
   private server: Server | null = null;
   private readonly players = new Map<string, ConnectedPlayer>();
+  private readonly botNames = new Map<number, string>();
+  private lastRosterTick = 0;
 
-  constructor(
-    private readonly gameService: GameService,
-    private readonly gameLoopService: GameLoopService,
-  ) {}
+  constructor(private readonly gameService: GameService) {}
 
   setServer(server: Server): void {
     this.server = server;
@@ -35,8 +41,9 @@ export class GameBroadcastService {
     socket: Socket,
     slot: number,
     userId: string,
+    username: string,
   ): void {
-    this.players.set(socketId, { socket, slot, userId });
+    this.players.set(socketId, { socket, slot, userId, username });
   }
 
   removePlayer(socketId: string): ConnectedPlayer | undefined {
@@ -62,6 +69,61 @@ export class GameBroadcastService {
     return Array.from(this.players.values());
   }
 
+  getPlayerBySlot(slot: number): ConnectedPlayer | undefined {
+    for (const player of this.players.values()) {
+      if (player.slot === slot) return player;
+    }
+    return undefined;
+  }
+
+  getRoster(): RosterMap {
+    const roster: RosterMap = {};
+    const state = this.gameService.state;
+
+    for (const player of this.players.values()) {
+      const ship = state.ships[player.slot];
+      if (ship && ship.playerId) {
+        roster[player.slot] = {
+          name: player.username,
+          team: ship.team,
+          shipType: ship.shipType,
+          kills: ship.kills,
+          rank: this.gameService.getEffectiveRank(player.slot),
+        };
+      }
+    }
+
+    for (const [slot, name] of this.botNames) {
+      const ship = state.ships[slot];
+      if (ship && ship.playerId) {
+        roster[slot] = {
+          name,
+          team: ship.team,
+          shipType: ship.shipType,
+          kills: ship.kills,
+          rank: 0,
+        };
+      }
+    }
+
+    return roster;
+  }
+
+  setBotName(slot: number, name: string): void {
+    this.botNames.set(slot, name);
+  }
+
+  removeBotName(slot: number): void {
+    this.botNames.delete(slot);
+  }
+
+  broadcastRoster(): void {
+    const roster = this.getRoster();
+    for (const player of this.players.values()) {
+      player.socket.emit("roster", roster);
+    }
+  }
+
   @OnEvent(GAME_WIN_EVENT)
   handleWin(data: {
     losingTeam: number;
@@ -73,8 +135,39 @@ export class GameBroadcastService {
     }
   }
 
+  @OnEvent(GAME_KILL_EVENT)
+  handleKill(event: KillEvent): void {
+    const killerPlayer =
+      event.killerSlot >= 0
+        ? this.getPlayerBySlot(event.killerSlot)
+        : undefined;
+    const victimPlayer = this.getPlayerBySlot(event.victimSlot);
+
+    const resolved: KillEvent = {
+      ...event,
+      killerName:
+        killerPlayer?.username ??
+        this.botNames.get(event.killerSlot) ??
+        event.killerName,
+      victimName:
+        victimPlayer?.username ??
+        this.botNames.get(event.victimSlot) ??
+        event.victimName,
+    };
+
+    for (const player of this.players.values()) {
+      player.socket.emit("kill", resolved);
+    }
+
+    this.broadcastRoster();
+  }
+
   @OnEvent(GAME_TICK_EVENT)
-  handleTick(): void {
+  handleTick(data: {
+    alertStatuses: AlertStatus[];
+    tmode: boolean;
+    surrenderTimers: number[];
+  }): void {
     if (this.players.size === 0) return;
 
     const state = this.gameService.state;
@@ -89,12 +182,19 @@ export class GameBroadcastService {
         state.torps,
         state.phasers,
         state.explosions,
-        this.gameLoopService.alertStatuses,
+        state.plasmas,
+        data.alertStatuses,
         state.planets,
-        this.gameLoopService.tmode,
+        data.tmode,
+        data.surrenderTimers,
       );
 
       player.socket.volatile.emit("state", buf);
+    }
+
+    if (state.currentTick - this.lastRosterTick >= 50) {
+      this.lastRosterTick = state.currentTick;
+      this.broadcastRoster();
     }
   }
 }

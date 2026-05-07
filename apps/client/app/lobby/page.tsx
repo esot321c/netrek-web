@@ -1,191 +1,160 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/auth-context";
+import { apiFetch } from "@/lib/api/client";
 
-interface PlayerInfo {
-  slot: number;
+interface ServerListing {
+  id: string;
   name: string;
-  team: number;
-  shipType: number;
-  status: number;
-  isBot: boolean;
-}
-
-interface TeamInfo {
-  name: string;
-  players: PlayerInfo[];
-  count: number;
-}
-
-interface ServerInfo {
-  motd: string;
-  tmode: boolean;
+  isOfficial: boolean;
+  region: string;
   playerCount: number;
   maxPlayers: number;
-  teams: Record<string, TeamInfo>;
-  options: {
-    shipsAllowed: string;
-    tractorPressor: boolean;
-    tmodeMinPlayers: number;
-  };
+  gamePhase: string;
 }
 
-const SHIP_NAMES: Record<number, string> = {
-  0: "SC",
-  1: "DD",
-  2: "CA",
-  3: "BB",
-  4: "AS",
-  5: "SB",
-};
-
-const TEAM_COLORS: Record<string, string> = {
-  "0": "#4fc3f7", // Federation — blue
-  "1": "#ef5350", // Romulans — red
-};
-
 export default function LobbyPage() {
-  const [info, setInfo] = useState<ServerInfo | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { user, loading } = useAuth();
   const router = useRouter();
+  const [servers, setServers] = useState<ServerListing[]>([]);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchInfo = async () => {
+    if (!loading && !user) {
+      router.replace("/auth/signin");
+    }
+  }, [user, loading, router]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const load = async () => {
       try {
-        const res = await fetch(
-          `${process.env["NEXT_PUBLIC_API_URL"] ?? "http://localhost:3010"}/lobby/info`,
-        );
-        if (!res.ok) throw new Error("Failed to load server info");
-        setInfo(await res.json());
+        const data = await apiFetch<ServerListing[]>("/servers");
+        setServers(data);
+        setFetchError(null);
       } catch (e) {
-        setError((e as Error).message);
+        setFetchError((e as Error).message);
       }
     };
 
-    fetchInfo();
-    const interval = setInterval(fetchInfo, 5000);
+    load();
+    const interval = setInterval(load, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [user]);
 
-  const handleJoinTeam = (team: number) => {
-    router.push(`/game?team=${team}`);
-  };
-
-  if (error) {
+  if (loading) {
     return (
-      <div style={styles.container}>
-        <pre style={styles.error}>ERROR: {error}</pre>
+      <div className="flex min-h-screen items-center justify-center bg-gray-900">
+        <p className="text-gray-500">Loading...</p>
       </div>
     );
   }
 
-  if (!info) {
-    return (
-      <div style={styles.container}>
-        <pre style={styles.text}>Connecting to server...</pre>
-      </div>
-    );
-  }
+  if (!user) return null;
 
   return (
-    <div style={styles.container}>
-      <div style={styles.section}>
-        <pre style={styles.header}>{"--- Netrek Web Server ---"}</pre>
-        <pre style={styles.motd}>{info.motd}</pre>
-      </div>
-
-      <div style={styles.section}>
-        <pre style={styles.subheader}>OPTIONS:</pre>
-        <pre style={styles.text}>
-          {`  Tournament Mode    : ${info.tmode ? "ACTIVE" : "inactive"}
-  T-Mode Min Players : ${info.options.tmodeMinPlayers} players / side
-  Ships Allowed      : ${info.options.shipsAllowed}
-  Tractor/Pressor    : ${info.options.tractorPressor ? "enabled" : "disabled"}
-  Players            : ${info.playerCount} / ${info.maxPlayers}`}
-        </pre>
-      </div>
-
-      <div style={styles.teamsRow}>
-        {Object.entries(info.teams).map(([teamId, team]) => (
-          <div key={teamId} style={styles.teamBox}>
-            <pre
-              style={{
-                ...styles.teamName,
-                color: TEAM_COLORS[teamId] ?? "#fff",
-              }}
-            >
-              {team.name} ({team.count})
-            </pre>
-            <div style={styles.playerList}>
-              {team.players.map((p) => (
-                <pre key={p.slot} style={styles.playerRow}>
-                  {`  ${String(p.slot).padStart(2)} ${SHIP_NAMES[p.shipType] ?? "??"} ${p.name}${p.isBot ? "" : " *"}`}
-                </pre>
-              ))}
-              {team.players.length === 0 && (
-                <pre style={styles.emptyText}> (empty)</pre>
-              )}
-            </div>
-            <button
-              style={{
-                ...styles.joinButton,
-                borderColor: TEAM_COLORS[teamId] ?? "#fff",
-                color: TEAM_COLORS[teamId] ?? "#fff",
-              }}
-              onClick={() => handleJoinTeam(Number(teamId))}
-            >
-              JOIN {team.name.toUpperCase()}
-            </button>
+    <div className="min-h-screen bg-gray-900 text-gray-300">
+      <div className="mx-auto max-w-5xl px-4 py-10">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-yellow-500">
+              Server Browser
+            </h1>
+            <p className="text-gray-500 mt-1">
+              Select a server to join. Refreshes every 5 seconds.
+            </p>
           </div>
-        ))}
+          <Link
+            href="/settings/servers"
+            className="rounded border border-yellow-600 px-4 py-2 text-sm text-yellow-500 hover:bg-yellow-600 hover:text-gray-900 transition-colors"
+          >
+            Host a Server
+          </Link>
+        </div>
+
+        {fetchError && (
+          <div className="mb-6 rounded border border-red-700 bg-red-900/30 px-4 py-3 text-sm text-red-400">
+            Failed to load servers: {fetchError}
+          </div>
+        )}
+
+        {servers.length === 0 && !fetchError ? (
+          <div className="rounded border border-gray-700 bg-gray-800 px-6 py-12 text-center text-gray-500">
+            No servers online right now.{" "}
+            <Link
+              href="/settings/servers"
+              className="text-yellow-500 underline"
+            >
+              Host one?
+            </Link>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {servers.map((server) => (
+              <Link
+                key={server.id}
+                href={`/lobby/${server.id}`}
+                className="flex items-center gap-4 rounded border border-gray-700 bg-gray-800 px-5 py-4 hover:border-yellow-600 hover:bg-gray-750 transition-colors"
+              >
+                {/* Name + badge */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-gray-100 truncate">
+                      {server.name}
+                    </span>
+                    {server.isOfficial ? (
+                      <span className="shrink-0 rounded bg-yellow-500 px-1.5 py-0.5 text-xs font-bold text-gray-900">
+                        OFFICIAL
+                      </span>
+                    ) : (
+                      <span className="shrink-0 rounded bg-gray-700 px-1.5 py-0.5 text-xs text-gray-400">
+                        COMMUNITY
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-sm text-gray-500 mt-0.5">
+                    {server.region}
+                  </div>
+                </div>
+
+                {/* Phase */}
+                <div className="text-sm text-gray-400 shrink-0">
+                  <span
+                    className={
+                      server.gamePhase === "active"
+                        ? "text-green-400"
+                        : "text-gray-500"
+                    }
+                  >
+                    {server.gamePhase}
+                  </span>
+                </div>
+
+                {/* Player count */}
+                <div className="text-sm shrink-0 w-20 text-right">
+                  <span
+                    className={
+                      server.playerCount >= server.maxPlayers
+                        ? "text-red-400"
+                        : "text-gray-300"
+                    }
+                  >
+                    {server.playerCount}/{server.maxPlayers}
+                  </span>
+                  <span className="text-gray-600 ml-1">players</span>
+                </div>
+
+                {/* Arrow */}
+                <div className="text-yellow-600 shrink-0">&#8250;</div>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    backgroundColor: "#000",
-    color: "#ffa500",
-    fontFamily: "monospace",
-    minHeight: "100vh",
-    padding: "20px",
-    display: "flex",
-    flexDirection: "column",
-    gap: "16px",
-  },
-  section: { borderBottom: "1px solid #333", paddingBottom: "12px" },
-  header: {
-    color: "#ffa500",
-    fontSize: "16px",
-    textAlign: "center",
-    margin: "0 0 8px 0",
-  },
-  subheader: { color: "#ffa500", fontSize: "14px", margin: "0 0 4px 0" },
-  motd: { color: "#ccc", fontSize: "13px", margin: 0, whiteSpace: "pre-wrap" },
-  text: { color: "#ccc", fontSize: "13px", margin: 0 },
-  teamsRow: { display: "flex", gap: "24px", justifyContent: "center" },
-  teamBox: {
-    border: "1px solid #444",
-    padding: "12px",
-    minWidth: "280px",
-    flex: 1,
-    maxWidth: "400px",
-  },
-  teamName: { fontSize: "16px", margin: "0 0 8px 0", textAlign: "center" },
-  playerList: { marginBottom: "12px", minHeight: "120px" },
-  playerRow: { color: "#ccc", fontSize: "12px", margin: 0 },
-  emptyText: { color: "#666", fontSize: "12px", margin: 0 },
-  joinButton: {
-    background: "transparent",
-    border: "1px solid",
-    padding: "8px 16px",
-    fontFamily: "monospace",
-    fontSize: "14px",
-    cursor: "pointer",
-    width: "100%",
-    textAlign: "center",
-  },
-  error: { color: "#ef5350", fontSize: "14px", margin: 0 },
-};

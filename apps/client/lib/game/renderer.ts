@@ -14,6 +14,7 @@ import {
   type ClientPhaser,
   type ClientExplosion,
   type ClientPlanet,
+  type ClientPlasma,
 } from "@netrek/shared";
 import { getInterpolatedShip, getMySlot } from "./state";
 import { updateViewport } from "./input";
@@ -135,6 +136,11 @@ export function renderFrame(state: ClientGameState | null): void {
     // Torpedoes (draw under ships)
     for (const torp of state.torps) {
       drawTorp(ctx, torp);
+    }
+
+    // Plasmas (draw as larger pulsing dots)
+    for (const plasma of state.plasmas) {
+      drawPlasma(ctx, plasma, state.tick);
     }
 
     // Phasers
@@ -339,6 +345,30 @@ function drawTorp(ctx: CanvasRenderingContext2D, torp: ClientTorp): void {
     ctx.lineTo(cx - half, cy + half);
     ctx.stroke();
   }
+}
+
+function drawPlasma(
+  ctx: CanvasRenderingContext2D,
+  plasma: ClientPlasma,
+  tick: number,
+): void {
+  const [cx, cy] = gameToScreen(plasma.x, plasma.y);
+  if (!canvas) return;
+  if (cx < -10 || cx > canvas.width + 10 || cy < -10 || cy > canvas.height + 10)
+    return;
+
+  const scale = getScale();
+  const basePx = Math.max(4, 120 * scale);
+  const pulse = 1 + 0.3 * Math.sin(tick * 0.5);
+  const px = basePx * pulse;
+  const color = TEAM_COLORS[plasma.team] ?? "#888888";
+
+  ctx.fillStyle = color;
+  ctx.globalAlpha = 0.8;
+  ctx.beginPath();
+  ctx.arc(cx, cy, px / 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1.0;
 }
 
 function drawPhaser(
@@ -775,6 +805,14 @@ function renderGalaxyMap(
     }
   }
 
+  // Plasmas on galaxy map (larger dots)
+  for (const plasma of state.plasmas) {
+    const px = (plasma.x / GALAXY_WIDTH) * w;
+    const py = (plasma.y / GALAXY_HEIGHT) * h;
+    ctx.fillStyle = TEAM_COLORS[plasma.team] ?? "#888";
+    ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, 3, 3);
+  }
+
   // Viewport indicator (show tactical view area)
   if (mySlot >= 0) {
     const vpSize = VIEWPORT_SIZE;
@@ -885,14 +923,25 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: ClientGameState): void {
     ctx.fillText(spdLabel, col1 + charW * 6, y + barH);
   }
 
-  // Speed with bar
+  // Speed with bar (absolute range 0-12, tick at ship max)
+  const ABS_MAX_SPEED = 12;
   const spdStr = `Sp[${padNum(spd, 2)}/${padNum(stats.maxSpeed, 2)}]`;
   ctx.fillStyle = "#ffffff";
   ctx.fillText(spdStr, col2, y + barH);
   let bx = col2 + charW * spdStr.length;
-  drawInlineBar(ctx, bx, y + 1, barW, barH, spd / stats.maxSpeed, "#44ff44");
+  drawInlineBar(
+    ctx,
+    bx,
+    y + 1,
+    barW,
+    barH,
+    spd / ABS_MAX_SPEED,
+    "#44ff44",
+    stats.maxSpeed / ABS_MAX_SPEED,
+  );
 
-  // Armies with bar
+  // Armies with bar (absolute range 0-25, tick at kill-based capacity)
+  const ABS_MAX_ARMIES = 25;
   const armyCapacity = Math.min(
     stats.maxArmies,
     Math.floor(self.kills * stats.armiesPerKill),
@@ -901,8 +950,17 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: ClientGameState): void {
   ctx.fillStyle = "#ffffff";
   ctx.fillText(arStr, col3after, y + barH);
   bx = col3after + charW * arStr.length;
-  const arPct = armyCapacity > 0 ? self.armies / armyCapacity : 0;
-  drawInlineBar(ctx, bx, y + 1, barW, barH, arPct, "#44ff44");
+  const arPct = armyCapacity > 0 ? self.armies / ABS_MAX_ARMIES : 0;
+  drawInlineBar(
+    ctx,
+    bx,
+    y + 1,
+    barW,
+    barH,
+    arPct,
+    "#44ff44",
+    armyCapacity / ABS_MAX_ARMIES,
+  );
 
   // Fuel with bar
   const fuelLen = String(stats.maxFuel).length;
@@ -1042,6 +1100,22 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: ClientGameState): void {
     ctx.font = "14px monospace";
     ctx.textAlign = "center";
     ctx.fillText("T-MODE", w / 2, 16);
+
+    // Genocide / surrender timer
+    if (self.surrenderTimer > 0) {
+      const totalSec = Math.ceil(self.surrenderTimer / 10);
+      const min = Math.floor(totalSec / 60);
+      const sec = totalSec % 60;
+      const flash = Math.floor(Date.now() / 500) % 2 === 0;
+      ctx.fillStyle = flash ? "#ff0000" : "#cc0000";
+      ctx.font = "16px monospace";
+      ctx.fillText(
+        `SURRENDER IN ${min}:${String(sec).padStart(2, "0")}`,
+        w / 2,
+        34,
+      );
+    }
+
     ctx.textAlign = "start";
   }
 }
@@ -1052,7 +1126,7 @@ function padNum(n: number | string, width: number): string {
   return s.length >= width ? s : " ".repeat(width - s.length) + s;
 }
 
-/** Draw an inline colored bar (used next to text labels) */
+/** Draw an inline colored bar with optional max-capacity tick mark */
 function drawInlineBar(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -1061,6 +1135,7 @@ function drawInlineBar(
   h: number,
   pct: number,
   color: string,
+  maxPct?: number,
 ): void {
   ctx.fillStyle = "#111111";
   ctx.fillRect(x, y, w, h);
@@ -1069,5 +1144,11 @@ function drawInlineBar(
   if (fill > 0) {
     ctx.fillStyle = color;
     ctx.fillRect(x, y, fill, h);
+  }
+
+  if (maxPct !== undefined && maxPct < 1) {
+    const tickX = Math.round(x + w * maxPct);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(tickX, y, 1, h);
   }
 }

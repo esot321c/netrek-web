@@ -1,0 +1,149 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================================
+// AUTH & USERS
+// ============================================================================
+
+enum Role {
+  USER
+  ADMIN
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  username  String   @unique
+  name      String?
+  avatarUrl String?
+
+  lastActiveAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relations
+  accounts    Account[]
+  sessions    Session[]
+  servers     GameServer[]
+  playerStats PlayerStats[]
+  matchPlayers MatchPlayer[]
+
+  roles Role[] @default([USER])
+
+  @@map("users")
+}
+
+model Account {
+  id                String @id @default(uuid())
+  userId            String
+  provider          String
+  providerAccountId String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  tokenFamily  String   @default(uuid())
+  lastTokenIat Int?
+  isValid      Boolean  @default(true)
+
+  ipAddress String?
+  userAgent String?
+
+  lastActiveAt DateTime @default(now())
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+// ============================================================================
+// GAME SERVERS & STATS
+// ============================================================================
+
+model GameServer {
+  id              String    @id @default(uuid())
+  name            String
+  ownerId         String
+  owner           User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  region          String    @default("us-east")
+  host            String
+  maxPlayers      Int       @default(16)
+  isOfficial      Boolean   @default(false)
+  serverTokenHash String
+  status          String    @default("offline")
+  playerCount     Int       @default(0)
+  botCount        Int       @default(0)
+  gamePhase       String    @default("waiting")
+  lastHeartbeatAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  matches Match[]
+
+  @@map("game_servers")
+}
+
+model PlayerStats {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  serverId      String
+  totalKills    Int      @default(0)
+  totalDeaths   Int      @default(0)
+  totalWins     Int      @default(0)
+  totalLosses   Int      @default(0)
+  planetsTaken  Int      @default(0)
+  armiesBombed  Int      @default(0)
+  armiesBeamed  Int      @default(0)
+  secondsPlayed Int      @default(0)
+  rank          Int      @default(0)
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, serverId])
+  @@map("player_stats")
+}
+
+model Match {
+  id          String     @id @default(uuid())
+  serverId    String
+  server      GameServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  winningTeam Int
+  duration    Int
+  genocide    Boolean    @default(false)
+  playedAt    DateTime   @default(now())
+
+  players MatchPlayer[]
+
+  @@map("matches")
+}
+
+model MatchPlayer {
+  id           String @id @default(uuid())
+  matchId      String
+  match        Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team         Int
+  shipType     Int
+  kills        Int    @default(0)
+  deaths       Int    @default(0)
+  planetsTaken Int    @default(0)
+  armiesBombed Int    @default(0)
+  armiesBeamed Int    @default(0)
+
+  @@map("match_players")
+}

@@ -1,16 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Team, ShipType, ShipStatus } from "@netrek/shared";
+import { ShipType, Team, InputCommand } from "@netrek/shared";
 import {
   connect,
   disconnect,
   onState,
   onConnect,
   onDisconnect,
-  onJoinResult,
-  sendJoin,
+  onJoined,
+  onChat,
+  onKill,
+  onRoster,
+  onGameWin,
   sendRespawn,
+  sendInput,
 } from "@/lib/game/socket";
 import {
   pushSnapshot,
@@ -19,14 +23,25 @@ import {
   getLatestSnapshot,
   resetState,
 } from "@/lib/game/state";
-import { setupInput } from "@/lib/game/input";
+import { setupInput, onChatChange, onRefitKey } from "@/lib/game/input";
 import { initRenderer, renderFrame } from "@/lib/game/renderer";
 import {
   initSound,
   resumeAudio,
   processSounds,
   resetSound,
+  playSound,
 } from "@/lib/game/sound";
+import {
+  handleChatMessage,
+  handleKillEvent,
+  updateRoster,
+  resetChat,
+  getTypingState,
+  TypingState,
+} from "@/lib/game/chat";
+import ChatPanel from "./chat-panel";
+import PlayerListPanel from "./player-list-panel";
 
 // Ship type labels
 const SHIPS = [
@@ -38,11 +53,6 @@ const SHIPS = [
   { type: ShipType.SB, key: "O", name: "Starbase" },
 ] as const;
 
-const TEAMS = [
-  { id: Team.FEDERATION, name: "Federation", color: "#ffff00" },
-  { id: Team.ROMULANS, name: "Romulans", color: "#ff4444" },
-] as const;
-
 const TEAM_COLORS: Record<number, string> = {
   [Team.FEDERATION]: "#ffff00",
   [Team.ROMULANS]: "#ff4444",
@@ -50,18 +60,42 @@ const TEAM_COLORS: Record<number, string> = {
   [Team.ORIONS]: "#44ffff",
 };
 
-/** Bottom panel height in pixels */
-const BOTTOM_PANEL_H = 140;
+const TEAM_NAMES: Record<number, string> = {
+  [Team.FEDERATION]: "Federation",
+  [Team.ROMULANS]: "Romulans",
+  [Team.KLINGONS]: "Klingons",
+  [Team.ORIONS]: "Orions",
+};
 
-export default function GameCanvas() {
+/** Bottom panel height in pixels */
+const BOTTOM_PANEL_H = 280;
+
+interface GameCanvasProps {
+  wsUrl: string;
+  gameToken: string;
+}
+
+export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const galCanvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
+  const respawnedAt = useRef<number>(0);
   const [connected, setConnected] = useState(false);
-  const [phase, setPhase] = useState<"select" | "playing" | "dead">("select");
-  const [showPlayerList, setShowPlayerList] = useState(true);
+  const [phase, setPhase] = useState<"waiting" | "playing" | "dead">("waiting");
+  const [chatVersion, setChatVersion] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
   const [infoTarget, setInfoTarget] = useState<string | null>(null);
+  const [showRefit, setShowRefit] = useState(false);
+  const [respawnReject, setRespawnReject] = useState<{
+    reason: string;
+    cooldownRemainingSec?: number;
+  } | null>(null);
+  const [respawnCountdown, setRespawnCountdown] = useState<number>(0);
+  const [gameWinData, setGameWinData] = useState<{
+    winningTeam: number;
+    losingTeam: number;
+    type: string;
+  } | null>(null);
 
   const handleResize = useCallback(() => {
     const canvas = canvasRef.current;
@@ -96,48 +130,89 @@ export default function GameCanvas() {
     initSound();
     const cleanupInput = setupInput(canvas);
 
-    // Socket connection
-    onConnect(() => setConnected(true));
+    // Socket events
+    onConnect(() => {
+      setConnected(true);
+      resumeAudio();
+    });
     onDisconnect(() => setConnected(false));
 
     onState((state) => {
       pushSnapshot(state);
       processSounds(state);
 
-      // Check if my ship is dead → show respawn UI
       if (getMySlot() >= 0) {
         const myShip = state.ships.find((s) => s.slotIndex === getMySlot());
         if (!myShip || myShip.status === 2) {
-          setPhase("dead");
+          if (Date.now() - respawnedAt.current > 2000) {
+            setPhase((prev) => {
+              if (prev !== "dead") {
+                setRespawnReject(null);
+                setRespawnCountdown(3);
+              }
+              return "dead";
+            });
+          }
+        } else {
+          setPhase("playing");
         }
       }
     });
 
-    onJoinResult((result) => {
-      if ("slot" in result) {
-        setMySlot(result.slot);
-        setPhase("playing");
-      }
+    onJoined((data) => {
+      setMySlot(data.slot);
+      setPhase("playing");
+      playSound("nt_enter_ship", 0.6);
+    });
+
+    onChat((msg) => {
+      handleChatMessage(msg, getMySlot());
+      setChatVersion((v) => v + 1);
+    });
+
+    onKill((event) => {
+      handleKillEvent(event);
+      setChatVersion((v) => v + 1);
+    });
+
+    onRoster((roster) => {
+      updateRoster(roster);
+      setChatVersion((v) => v + 1);
+    });
+
+    onGameWin((data) => {
+      setGameWinData(data);
+      setTimeout(() => setGameWinData(null), 10_000);
+    });
+
+    onChatChange(() => {
+      setChatVersion((v) => v + 1);
     });
 
     // Keyboard shortcuts for panels
     function handlePanelKeys(e: KeyboardEvent) {
       if (e.ctrlKey || e.altKey || e.metaKey) return;
-      if (e.key === "L") {
-        setShowPlayerList((v) => !v);
-      }
+      if (getTypingState() !== TypingState.IDLE) return;
       if (e.key === "h") {
         setShowHelp((v) => !v);
       }
       if (e.key === "i" || e.key === "I") {
-        // Show info on nearest player/planet to mouse cursor
-        // For now toggle the info panel; content updates on mouse position
         setInfoTarget((v) => (v !== null ? null : ""));
       }
     }
     window.addEventListener("keydown", handlePanelKeys);
 
-    connect();
+    onRefitKey(() => {
+      const snap = getLatestSnapshot();
+      if (!snap) return;
+      const myShip = snap.ships.find((s) => s.slotIndex === getMySlot());
+      if (!myShip) return;
+      const homeworldIdx = myShip.team * 10;
+      if (snap.self.orbitPlanetId !== homeworldIdx) return;
+      setShowRefit((v) => !v);
+    });
+
+    connect(wsUrl, gameToken);
 
     // Render loop
     function loop() {
@@ -155,17 +230,34 @@ export default function GameCanvas() {
       disconnect();
       resetState();
       resetSound();
+      resetChat();
     };
-  }, [handleResize]);
+  }, [handleResize, wsUrl, gameToken]);
 
-  const handleJoin = (team: number, shipType: number) => {
-    resumeAudio();
-    sendJoin(team, shipType);
-  };
+  useEffect(() => {
+    if (respawnCountdown <= 0) return;
+    const timer = setTimeout(() => {
+      setRespawnCountdown((v) => Math.max(0, v - 1));
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [respawnCountdown]);
 
   const handleRespawn = (shipType: number) => {
-    sendRespawn(shipType);
-    setPhase("playing");
+    sendRespawn(shipType, (result) => {
+      if (result.ok) {
+        respawnedAt.current = Date.now();
+        setRespawnReject(null);
+        setRespawnCountdown(0);
+        setPhase("playing");
+      } else if (result.reason === "respawn_delay") {
+        setRespawnCountdown(Math.ceil(result.remainingSec ?? 0));
+      } else {
+        setRespawnReject({
+          reason: result.reason ?? "unknown",
+          cooldownRemainingSec: result.cooldownRemainingSec,
+        });
+      }
+    });
   };
 
   const snapshot = getLatestSnapshot();
@@ -196,6 +288,15 @@ export default function GameCanvas() {
             </Overlay>
           )}
 
+          {/* Waiting for "joined" event */}
+          {connected && phase === "waiting" && (
+            <Overlay>
+              <p style={{ color: "#aaa", fontSize: 18 }}>
+                Waiting to join game...
+              </p>
+            </Overlay>
+          )}
+
           {/* Help window (h key) */}
           {showHelp && (
             <div
@@ -218,26 +319,35 @@ export default function GameCanvas() {
               <div style={{ color: "#ffff00", marginBottom: 8, fontSize: 14 }}>
                 Speed & Navigation
               </div>
-              <HelpRow k="0-9" desc="Set warp speed 0-9" />
-              <HelpRow k=")" desc="Warp 10" />
-              <HelpRow k="!" desc="Warp 11" />
-              <HelpRow k="@" desc="Warp 12" />
-              <HelpRow k="%" desc="Maximum speed" />
+              <HelpRow k="0-9" desc="Set warp 0-9" />
+              <HelpRow k=") ! @" desc="Warp 10 / 11 / 12" />
+              <HelpRow k="% #" desc="Max warp / Half warp" />
+              <HelpRow k="< >" desc="Decrease / Increase warp by 1" />
+              <HelpRow k="k" desc="Set course (at mouse)" />
+              <HelpRow k="o" desc="Enter orbit or dock" />
               <HelpRow k="l" desc="Lock onto nearest planet/player" />
+              <HelpRow k=";" desc="Lock planet/starbase only" />
+              <HelpRow k="*" desc="Transwarp to starbase" />
               <div style={{ color: "#ffff00", marginTop: 8, marginBottom: 4 }}>
                 Weapons & Defense
               </div>
               <HelpRow k="s" desc="Toggle shields" />
+              <HelpRow k="[ ]" desc="Shields down / up" />
               <HelpRow k="c" desc="Toggle cloak" />
+              <HelpRow k="{ }" desc="Cloak on / off" />
               <HelpRow k="d" desc="Detonate enemy torps" />
               <HelpRow k="D" desc="Detonate own torps" />
-              <HelpRow k="T" desc="Tractor beam toggle" />
-              <HelpRow k="y" desc="Pressor beam toggle" />
-              <HelpRow k="r" desc="Toggle repair mode" />
+              <HelpRow k="f" desc="Fire plasma torpedo" />
+              <HelpRow k="T" desc="Tractor beam" />
+              <HelpRow k="y" desc="Pressor beam" />
+              <HelpRow k="_ ^" desc="Tractor on / Pressor on" />
+              <HelpRow k="$" desc="Tractor/pressor off" />
+              <HelpRow k="r" desc="Refit ship (orbit homeworld)" />
+              <HelpRow k="R" desc="Toggle repair mode" />
               <div style={{ color: "#ffff00", marginTop: 8, marginBottom: 4 }}>
-                Planet Operations
+                Planet & Starbase Operations
               </div>
-              <HelpRow k="b" desc="Bomb enemy planet" />
+              <HelpRow k="b" desc="Bomb planet" />
               <HelpRow k="z" desc="Beam up armies" />
               <HelpRow k="x" desc="Beam down armies" />
               <div style={{ color: "#ffff00", marginTop: 8, marginBottom: 4 }}>
@@ -249,9 +359,31 @@ export default function GameCanvas() {
               <div style={{ color: "#ffff00", marginTop: 8, marginBottom: 4 }}>
                 Windows
               </div>
-              <HelpRow k="L" desc="Toggle player list" />
               <HelpRow k="i" desc="Info on nearest entity" />
               <HelpRow k="h" desc="Toggle this help" />
+              <div style={{ color: "#ffff00", marginTop: 8, marginBottom: 4 }}>
+                Chat & Macros
+              </div>
+              <HelpRow k="m" desc="Start sending message" />
+              <HelpRow k="X + key" desc="Fire macro" />
+              <div style={{ color: "#555", marginTop: 8 }}>
+                Full docs:{" "}
+                <a
+                  href="/docs/keymap"
+                  target="_blank"
+                  style={{ color: "#44ffff" }}
+                >
+                  /docs/keymap
+                </a>
+                {" | "}
+                <a
+                  href="/docs/macros"
+                  target="_blank"
+                  style={{ color: "#44ffff" }}
+                >
+                  /docs/macros
+                </a>
+              </div>
               <div style={{ color: "#555", marginTop: 8 }}>
                 Press h to close
               </div>
@@ -261,8 +393,8 @@ export default function GameCanvas() {
           {/* Info panel (i key) */}
           {infoTarget !== null && snapshot && <InfoPanel state={snapshot} />}
 
-          {/* Ship selection */}
-          {connected && (phase === "select" || phase === "dead") && (
+          {/* Respawn UI (shown when dead) */}
+          {connected && phase === "dead" && (
             <Overlay>
               <div style={{ textAlign: "center" }}>
                 <h2
@@ -272,90 +404,163 @@ export default function GameCanvas() {
                     fontFamily: "monospace",
                   }}
                 >
-                  {phase === "dead"
-                    ? "DESTROYED — Select Ship"
-                    : "Select Team & Ship"}
+                  DESTROYED — Select Ship to Respawn
                 </h2>
-
-                {phase === "select" && (
-                  <div
+                {respawnCountdown > 0 && (
+                  <p
                     style={{
-                      display: "flex",
-                      gap: 20,
-                      justifyContent: "center",
-                      marginBottom: 20,
+                      color: "#ffff00",
+                      fontFamily: "monospace",
+                      fontSize: 16,
+                      marginBottom: 12,
                     }}
                   >
-                    {TEAMS.map((team) => (
-                      <div key={team.id}>
-                        <h3
-                          style={{
-                            color: team.color,
-                            fontFamily: "monospace",
-                            marginBottom: 10,
-                          }}
-                        >
-                          {team.name}
-                        </h3>
-                        <div
-                          style={{
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: 6,
-                          }}
-                        >
-                          {SHIPS.map((ship) => (
-                            <button
-                              key={ship.type}
-                              onClick={() => handleJoin(team.id, ship.type)}
-                              style={{
-                                background: "#222",
-                                color: team.color,
-                                border: `1px solid ${team.color}44`,
-                                padding: "6px 16px",
-                                fontFamily: "monospace",
-                                fontSize: 14,
-                                cursor: "pointer",
-                              }}
-                            >
-                              [{ship.key}] {ship.name}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                    Respawn in {respawnCountdown}...
+                  </p>
                 )}
-
-                {phase === "dead" && (
-                  <div
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                    alignItems: "center",
+                  }}
+                >
+                  {SHIPS.map((ship) => (
+                    <button
+                      key={ship.type}
+                      onClick={() => handleRespawn(ship.type)}
+                      disabled={respawnCountdown > 0}
+                      style={{
+                        background: respawnCountdown > 0 ? "#111" : "#222",
+                        color: respawnCountdown > 0 ? "#555" : "#fff",
+                        border: "1px solid #444",
+                        padding: "6px 24px",
+                        fontFamily: "monospace",
+                        fontSize: 14,
+                        cursor:
+                          respawnCountdown > 0 ? "not-allowed" : "pointer",
+                        width: 200,
+                      }}
+                    >
+                      [{ship.key}] {ship.name}
+                    </button>
+                  ))}
+                </div>
+                {respawnReject && (
+                  <p
                     style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 6,
-                      alignItems: "center",
+                      color: "#ff4444",
+                      fontFamily: "monospace",
+                      fontSize: 12,
+                      marginTop: 8,
                     }}
                   >
-                    {SHIPS.map((ship) => (
-                      <button
-                        key={ship.type}
-                        onClick={() => handleRespawn(ship.type)}
-                        style={{
-                          background: "#222",
-                          color: "#fff",
-                          border: "1px solid #444",
-                          padding: "6px 24px",
-                          fontFamily: "monospace",
-                          fontSize: 14,
-                          cursor: "pointer",
-                          width: 200,
-                        }}
-                      >
-                        [{ship.key}] {ship.name}
-                      </button>
-                    ))}
-                  </div>
+                    {respawnReject.reason === "rank" &&
+                      "Requires Commander rank to pilot Starbase"}
+                    {respawnReject.reason === "sb_active" &&
+                      "Starbase already active on your team"}
+                    {respawnReject.reason === "planets" &&
+                      "Team needs 5+ planets for Starbase"}
+                    {respawnReject.reason === "sb_cooldown" &&
+                      `Starbase cooldown: ${Math.floor((respawnReject.cooldownRemainingSec ?? 0) / 60)}:${String((respawnReject.cooldownRemainingSec ?? 0) % 60).padStart(2, "0")}`}
+                    {respawnReject.reason === "torps" &&
+                      "Wait for torpedoes to resolve"}
+                  </p>
                 )}
+              </div>
+            </Overlay>
+          )}
+
+          {/* Refit overlay (r key while alive) */}
+          {showRefit && phase === "playing" && (
+            <Overlay>
+              <div style={{ textAlign: "center" }}>
+                <h2
+                  style={{
+                    color: "#fff",
+                    marginBottom: 20,
+                    fontFamily: "monospace",
+                  }}
+                >
+                  REFIT — Select Ship (orbit homeworld)
+                </h2>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                    alignItems: "center",
+                  }}
+                >
+                  {SHIPS.map((ship) => (
+                    <button
+                      key={ship.type}
+                      onClick={() => {
+                        sendInput(InputCommand.REFIT, ship.type);
+                        setShowRefit(false);
+                      }}
+                      style={{
+                        background: "#222",
+                        color: "#fff",
+                        border: "1px solid #444",
+                        padding: "6px 24px",
+                        fontFamily: "monospace",
+                        fontSize: 14,
+                        cursor: "pointer",
+                        width: 200,
+                      }}
+                    >
+                      [{ship.key}] {ship.name}
+                    </button>
+                  ))}
+                </div>
+                <p
+                  style={{
+                    color: "#555",
+                    fontFamily: "monospace",
+                    fontSize: 12,
+                    marginTop: 12,
+                  }}
+                >
+                  Press r to cancel
+                </p>
+              </div>
+            </Overlay>
+          )}
+
+          {/* Game win/loss overlay */}
+          {gameWinData && (
+            <Overlay>
+              <div
+                style={{
+                  textAlign: "center",
+                  fontFamily: "monospace",
+                }}
+              >
+                <h2
+                  style={{
+                    color: TEAM_COLORS[gameWinData.winningTeam] ?? "#fff",
+                    fontSize: 28,
+                    marginBottom: 12,
+                  }}
+                >
+                  {TEAM_NAMES[gameWinData.winningTeam] ?? "Unknown"} WINS!
+                </h2>
+                <p style={{ color: "#aaa", fontSize: 16 }}>
+                  {gameWinData.type === "genocide"
+                    ? `${TEAM_NAMES[gameWinData.losingTeam] ?? "Enemy"} has been eliminated`
+                    : `${TEAM_NAMES[gameWinData.losingTeam] ?? "Enemy"} surrendered (timer expired)`}
+                </p>
+                <p
+                  style={{
+                    color: "#555",
+                    fontSize: 12,
+                    marginTop: 16,
+                  }}
+                >
+                  New game starting...
+                </p>
               </div>
             </Overlay>
           )}
@@ -381,75 +586,21 @@ export default function GameCanvas() {
               aspectRatio: "1",
             }}
           />
-
-          {/* Player list (toggled with L key) */}
-          {showPlayerList && snapshot && <PlayerList state={snapshot} />}
         </div>
       </div>
 
-      {/* Bottom panel: chat area */}
+      {/* Bottom panel: player list (left) + chat (right) */}
       <div
         style={{
           height: BOTTOM_PANEL_H,
           borderTop: "1px solid #333",
           background: "#000000",
           display: "flex",
-          fontFamily: "monospace",
-          fontSize: 12,
-          color: "#aaa",
         }}
       >
-        <div style={{ flex: 1, padding: 6, overflowY: "auto" }}>
-          <div style={{ color: "#555" }}>-- Chat (not yet implemented) --</div>
-          <div style={{ color: "#555", marginTop: 4 }}>
-            L: player list | i: info | h: help
-          </div>
-          <div style={{ color: "#555" }}>
-            Left: torps | Shift+Left/Middle: phasers | Right: course
-          </div>
-        </div>
+        <PlayerListPanel state={snapshot} rosterVersion={chatVersion} />
+        <ChatPanel chatVersion={chatVersion} />
       </div>
-    </div>
-  );
-}
-
-function PlayerList({
-  state,
-}: {
-  state: import("@netrek/shared").ClientGameState;
-}) {
-  const alivePlayers = state.ships.filter((s) => s.status !== ShipStatus.DEAD);
-  const SHIP_NAMES = ["SC", "DD", "CA", "BB", "AS", "SB"];
-  const TEAM_NAMES = ["Fed", "Rom", "Kli", "Ori"];
-
-  return (
-    <div
-      style={{
-        flex: 1,
-        padding: 6,
-        overflowY: "auto",
-        fontFamily: "monospace",
-        fontSize: 11,
-        color: "#aaa",
-        borderTop: "1px solid #333",
-      }}
-    >
-      <div style={{ color: "#888", marginBottom: 4 }}>
-        Players ({alivePlayers.length})
-      </div>
-      {alivePlayers.map((ship) => {
-        const color = TEAM_COLORS[ship.team] ?? "#888";
-        return (
-          <div key={ship.slotIndex} style={{ color, lineHeight: "16px" }}>
-            {String(ship.slotIndex).padStart(2)}{" "}
-            {SHIP_NAMES[ship.shipType] ?? "??"} {TEAM_NAMES[ship.team] ?? "??"}{" "}
-            <span style={{ color: "#666" }}>
-              Sh:{Math.round(ship.shieldPct * 100)}% Hu:
-              {Math.round((1 - ship.hullDamagePct) * 100)}%
-            </span>
-          </div>
-        );
-      })}
     </div>
   );
 }
@@ -470,7 +621,6 @@ function InfoPanel({
 }: {
   state: import("@netrek/shared").ClientGameState;
 }) {
-  // Show summary of nearest entities (simplified — no mouse tracking yet)
   const mySlot = getMySlot();
   const myShip = state.ships.find((s) => s.slotIndex === mySlot);
   if (!myShip) return null;
@@ -485,12 +635,11 @@ function InfoPanel({
   ];
   const TEAM_NAMES_FULL = ["Federation", "Romulans", "Klingons", "Orions"];
 
-  // Find closest enemy ship and closest planet
   let closestEnemy: (typeof state.ships)[0] | null = null;
   let closestEnemyDist = Infinity;
   for (const ship of state.ships) {
     if (ship.slotIndex === mySlot) continue;
-    if (ship.status === 2) continue; // DEAD
+    if (ship.status === 2) continue;
     if (ship.team === myShip.team) continue;
     const dx = ship.x - myShip.x;
     const dy = ship.y - myShip.y;

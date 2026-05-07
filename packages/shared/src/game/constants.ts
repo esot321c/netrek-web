@@ -61,6 +61,7 @@ export const EXPLOSION_INNER_RADIUS = 350;
 export const EXPLOSION_OUTER_RADIUS = 3000;
 export const EXPLOSION_FALLOFF_DIVISOR = 2650;
 export const EXPLOSION_DURATION_TICKS = 20; // 2 seconds visual
+export const RESPAWN_DELAY_TICKS = 30; // 3 seconds at 10Hz
 
 // ---------------------------------------------------------------------------
 // Alert status thresholds
@@ -70,6 +71,31 @@ export const EXPLOSION_DURATION_TICKS = 20; // 2 seconds visual
 export const YELLOW_ALERT_DIST = Math.floor(GALAXY_WIDTH / 7);
 /** Red alert distance — close range */
 export const RED_ALERT_DIST = Math.floor(GALAXY_WIDTH / 20);
+
+// ---------------------------------------------------------------------------
+// Docking
+// ---------------------------------------------------------------------------
+
+export const MAX_DOCK_SHIPS = 4;
+export const DOCK_DIST = 900; // same as ORBIT_DIST
+export const DOCK_SHIELD_REPAIR_MULT = 5; // 5x normal shield repair while docked
+export const DOCK_FUEL_RECHARGE_MULT = 12; // 12x normal fuel recharge while docked
+
+// ---------------------------------------------------------------------------
+// Plasma torpedoes
+// ---------------------------------------------------------------------------
+
+export const MAX_PLASMAS = 16; // one per possible player slot
+export const PLASMA_SPEED = 5;
+export const PLASMA_DAMAGE = 150;
+export const PLASMA_SPLASH_RADIUS = 1500;
+export const PLASMA_FUEL_COST = 2000;
+export const PLASMA_HEAT = 50;
+export const PLASMA_LIFETIME = 60; // 6 seconds at 10Hz
+export const PLASMA_TURN_RATE = 4; // direction units per tick
+export const PLASMA_MIN_KILLS = 2; // need 2+ kills to fire
+export const PLASMA_HIT_RADIUS = 200; // collision radius for phaser/torp counterplay
+export const PLASMA_LOCK_RANGE = 6000; // max range to acquire target on fire
 
 // ---------------------------------------------------------------------------
 // Planets
@@ -638,12 +664,12 @@ export const SHIP_STATS: Readonly<Record<ShipType, ShipStats>> = Object.freeze({
     tractorStrength: 2000,
     tractorRange: 0.7,
     engineCooling: 8,
-    weaponCooling: 2,
+    weaponCooling: 8,
     fuelRecharge: 6,
     shieldRepairRate: 2,
     hullRepairRate: 1,
-    accelRate: 1.5,
-    decelRate: 2.0,
+    accelRate: 0.7,
+    decelRate: 1.0,
     baseTurnRate: 40,
     phaserFuelMultiplier: 7,
     torpFuelMultiplier: 7,
@@ -651,7 +677,8 @@ export const SHIP_STATS: Readonly<Record<ShipType, ShipStats>> = Object.freeze({
     torpHeat: 25,
     explosionDamage: 75,
     maxWpnTemp: 1000,
-    maxEgnTemp: 1000,
+    maxEgnTemp: 1200,
+    cloakFuelPerTick: 100,
   },
   [ShipType.DD]: {
     maxSpeed: 10,
@@ -661,7 +688,7 @@ export const SHIP_STATS: Readonly<Record<ShipType, ShipStats>> = Object.freeze({
     maxHull: 85,
     maxFuel: 7000,
     maxArmies: 5,
-    armiesPerKill: 1.67,
+    armiesPerKill: 2,
     torpSpeed: 14,
     torpDamage: 30,
     phaserDamage: 85,
@@ -670,12 +697,12 @@ export const SHIP_STATS: Readonly<Record<ShipType, ShipStats>> = Object.freeze({
     tractorStrength: 2500,
     tractorRange: 0.9,
     engineCooling: 7,
-    weaponCooling: 2,
+    weaponCooling: 7,
     fuelRecharge: 8,
     shieldRepairRate: 2,
     hullRepairRate: 1,
-    accelRate: 1.2,
-    decelRate: 1.5,
+    accelRate: 0.55,
+    decelRate: 0.8,
     baseTurnRate: 36,
     phaserFuelMultiplier: 7,
     torpFuelMultiplier: 7,
@@ -684,6 +711,7 @@ export const SHIP_STATS: Readonly<Record<ShipType, ShipStats>> = Object.freeze({
     explosionDamage: 100,
     maxWpnTemp: 1000,
     maxEgnTemp: 1000,
+    cloakFuelPerTick: 100,
   },
   [ShipType.CA]: {
     maxSpeed: 9,
@@ -702,12 +730,12 @@ export const SHIP_STATS: Readonly<Record<ShipType, ShipStats>> = Object.freeze({
     tractorStrength: 3000,
     tractorRange: 1.0,
     engineCooling: 6,
-    weaponCooling: 2,
+    weaponCooling: 6,
     fuelRecharge: 8,
     shieldRepairRate: 2,
     hullRepairRate: 1,
-    accelRate: 1.0,
-    decelRate: 1.2,
+    accelRate: 0.45,
+    decelRate: 0.6,
     baseTurnRate: 32,
     phaserFuelMultiplier: 7,
     torpFuelMultiplier: 7,
@@ -716,6 +744,7 @@ export const SHIP_STATS: Readonly<Record<ShipType, ShipStats>> = Object.freeze({
     explosionDamage: 100,
     maxWpnTemp: 1000,
     maxEgnTemp: 1000,
+    cloakFuelPerTick: 100,
   },
   [ShipType.BB]: {
     maxSpeed: 8,
@@ -734,12 +763,12 @@ export const SHIP_STATS: Readonly<Record<ShipType, ShipStats>> = Object.freeze({
     tractorStrength: 3700,
     tractorRange: 1.2,
     engineCooling: 6,
-    weaponCooling: 2,
+    weaponCooling: 6,
     fuelRecharge: 10,
     shieldRepairRate: 2,
     hullRepairRate: 1,
-    accelRate: 0.8,
-    decelRate: 1.0,
+    accelRate: 0.35,
+    decelRate: 0.5,
     baseTurnRate: 28,
     phaserFuelMultiplier: 10,
     torpFuelMultiplier: 10,
@@ -748,6 +777,7 @@ export const SHIP_STATS: Readonly<Record<ShipType, ShipStats>> = Object.freeze({
     explosionDamage: 100,
     maxWpnTemp: 1000,
     maxEgnTemp: 1000,
+    cloakFuelPerTick: 100,
   },
   [ShipType.AS]: {
     maxSpeed: 8,
@@ -766,12 +796,12 @@ export const SHIP_STATS: Readonly<Record<ShipType, ShipStats>> = Object.freeze({
     tractorStrength: 2500,
     tractorRange: 0.7,
     engineCooling: 6,
-    weaponCooling: 2,
+    weaponCooling: 6,
     fuelRecharge: 6,
     shieldRepairRate: 2,
     hullRepairRate: 1,
-    accelRate: 1.0,
-    decelRate: 1.2,
+    accelRate: 0.45,
+    decelRate: 0.6,
     baseTurnRate: 32,
     phaserFuelMultiplier: 14,
     torpFuelMultiplier: 14,
@@ -780,6 +810,7 @@ export const SHIP_STATS: Readonly<Record<ShipType, ShipStats>> = Object.freeze({
     explosionDamage: 100,
     maxWpnTemp: 1000,
     maxEgnTemp: 1200,
+    cloakFuelPerTick: 50,
   },
   [ShipType.SB]: {
     maxSpeed: 2,
@@ -798,12 +829,12 @@ export const SHIP_STATS: Readonly<Record<ShipType, ShipStats>> = Object.freeze({
     tractorStrength: 8000,
     tractorRange: 1.5,
     engineCooling: 6,
-    weaponCooling: 3,
+    weaponCooling: 6,
     fuelRecharge: 40,
     shieldRepairRate: 4,
     hullRepairRate: 2,
-    accelRate: 0.5,
-    decelRate: 0.5,
+    accelRate: 0.25,
+    decelRate: 0.25,
     baseTurnRate: 16,
     phaserFuelMultiplier: 28,
     torpFuelMultiplier: 28,
@@ -812,5 +843,6 @@ export const SHIP_STATS: Readonly<Record<ShipType, ShipStats>> = Object.freeze({
     explosionDamage: 200,
     maxWpnTemp: 1300,
     maxEgnTemp: 1000,
+    cloakFuelPerTick: 500,
   },
 });

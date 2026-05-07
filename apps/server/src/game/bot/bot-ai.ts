@@ -10,6 +10,8 @@ import {
   ShipStatus,
   distance,
   ORBIT_DIST,
+  SHIP_STATS,
+  BEAM_MIN_ARMIES,
 } from "@netrek/shared";
 import {
   nearestEnemyShip,
@@ -64,6 +66,12 @@ const RETREAT_DONE_FUEL = 5000;
 /** Idle ticks in PATROL before considering a BOMB mission */
 const PATROL_BOMB_IDLE_TICKS = 300;
 
+/** Max enemy armies on a planet for it to be worth taking (already bombed down) */
+const TAKE_MAX_ENEMY_ARMIES = 4;
+
+/** Speed while carrying armies to take a planet */
+const TAKE_SPEED = 6;
+
 // Movement speeds
 const PATROL_SPEED = 5;
 const ATTACK_SPEED = 8;
@@ -91,6 +99,9 @@ export class BotBrain {
   private escortTargetSlot = -1;
   private defendPlanetId = -1;
   private oggTargetSlot = -1;
+  private takePlanetId = -1;
+  private takePickupPlanetId = -1;
+  private takePhase: "pickup" | "drop" = "pickup";
   private ticksInState = 0;
 
   // Order override (from team chat commands)
@@ -267,9 +278,40 @@ export class BotBrain {
     }
 
     // -------------------------------------------------------------------------
+    // Priority 7: TAKE if there's a bombed-down enemy planet and we have kills
+    // -------------------------------------------------------------------------
+    if (
+      this.currentState === BotAIState.PATROL &&
+      self.tmode &&
+      self.kills >= 1
+    ) {
+      const takeable = this.findTakeablePlanet(myX, myY, planets);
+      if (takeable !== null) {
+        this.takePlanetId = takeable.planetId;
+        this.takePhase = self.armies > 0 ? "drop" : "pickup";
+        this.transition(BotAIState.TAKE);
+      }
+    }
+
+    // -------------------------------------------------------------------------
     // Execute current state
     // -------------------------------------------------------------------------
-    return this.dispatchState(myX, myY, tick, gameState, mySelf);
+    const stateInputs = this.dispatchState(myX, myY, tick, gameState, mySelf);
+
+    // Ensure shields are up for any combat state — covers transition gaps
+    // where the bot was just bombing/repairing with shields down
+    if (
+      this.currentState !== BotAIState.BOMB &&
+      this.currentState !== BotAIState.RETREAT &&
+      this.currentState !== BotAIState.TAKE &&
+      !mySelf.shieldsUp
+    ) {
+      return [
+        { command: InputCommand.SHIELD_TOGGLE, value: 1, tick },
+        ...stateInputs,
+      ];
+    }
+    return stateInputs;
   }
 
   // ---------------------------------------------------------------------------
@@ -306,6 +348,8 @@ export class BotBrain {
         return this.doOgg(myX, myY, tick, gs.ships, gs.self, mySelf);
       case BotAIState.RETREAT:
         return this.doRetreat(myX, myY, tick, gs.planets, gs.self, mySelf);
+      case BotAIState.TAKE:
+        return this.doTake(myX, myY, tick, gs.planets, gs.self, mySelf);
       default:
         return [];
     }
@@ -427,21 +471,12 @@ export class BotBrain {
     this.ticksInState++;
     const inputs: PlayerInput[] = [];
 
-    // Drop shields to allow hull repair
-    if (mySelf.shieldsUp) {
-      inputs.push({ command: InputCommand.SHIELD_TOGGLE, value: 0, tick });
-    }
-    // Enable repair mode
-    if (!mySelf.repairMode) {
-      inputs.push({ command: InputCommand.REPAIR_TOGGLE, value: 1, tick });
-    }
-
     // Done retreating?
     if (self.hullDamage <= RETREAT_DONE_HULL && self.fuel > RETREAT_DONE_FUEL) {
-      // Disable repair mode before leaving
       if (mySelf.repairMode) {
         inputs.push({ command: InputCommand.REPAIR_TOGGLE, value: 0, tick });
       }
+      inputs.push(...shieldsUp(mySelf, tick));
       this.transition(BotAIState.PATROL);
       return inputs;
     }
@@ -463,9 +498,18 @@ export class BotBrain {
 
     const dist = distance(myX, myY, dest.x, dest.y);
     if (dist <= ORBIT_DIST) {
+      // Safe in orbit: drop shields and repair
+      if (mySelf.shieldsUp) {
+        inputs.push({ command: InputCommand.SHIELD_TOGGLE, value: 0, tick });
+      }
+      if (!mySelf.repairMode) {
+        inputs.push({ command: InputCommand.REPAIR_TOGGLE, value: 1, tick });
+      }
       inputs.push({ command: InputCommand.ORBIT, value: 0, tick });
       inputs.push({ command: InputCommand.SET_SPEED, value: 0, tick });
     } else {
+      // In transit: shields UP, run to safety
+      inputs.push(...shieldsUp(mySelf, tick));
       inputs.push(...moveTo(myX, myY, dest.x, dest.y, RETREAT_SPEED, tick));
     }
 
@@ -487,8 +531,6 @@ export class BotBrain {
     this.ticksInState++;
     const inputs: PlayerInput[] = [];
 
-    inputs.push(...shieldsUp(mySelf, tick));
-
     let target = planets.find((p) => p.planetId === this.bombTargetPlanetId);
 
     // Re-pick if planet is now friendly or depleted
@@ -497,6 +539,20 @@ export class BotBrain {
       target.team === this.team ||
       target.armies < BOMB_WORTHWHILE_ARMIES
     ) {
+      // Planet bombed down — try to take it if we have kills
+      if (
+        target &&
+        target.team !== this.team &&
+        target.armies <= TAKE_MAX_ENEMY_ARMIES &&
+        self.kills >= 1 &&
+        self.tmode
+      ) {
+        this.takePlanetId = target.planetId;
+        this.takePhase = "pickup";
+        this.transition(BotAIState.TAKE);
+        return inputs;
+      }
+
       const newTarget = nearestEnemyPlanet(
         myX,
         myY,
@@ -516,9 +572,16 @@ export class BotBrain {
     const dist = distance(myX, myY, target.x, target.y);
 
     if (dist <= ORBIT_DIST) {
+      // In orbit: shields must be DOWN for bombing to work
+      if (mySelf.shieldsUp) {
+        inputs.push({ command: InputCommand.SHIELD_TOGGLE, value: 0, tick });
+      }
       inputs.push({ command: InputCommand.ORBIT, value: 0, tick });
       inputs.push({ command: InputCommand.SET_SPEED, value: 0, tick });
-      inputs.push({ command: InputCommand.BOMB, value: 1, tick });
+      // BOMB is a toggle — only send once to start
+      if (!mySelf.bombing) {
+        inputs.push({ command: InputCommand.BOMB, value: 1, tick });
+      }
 
       // Veteran cloaks while bombing if fuel is sufficient
       if (
@@ -529,6 +592,8 @@ export class BotBrain {
         inputs.push({ command: InputCommand.CLOAK_TOGGLE, value: 1, tick });
       }
     } else {
+      // In transit: shields up for protection
+      inputs.push(...shieldsUp(mySelf, tick));
       inputs.push(...moveTo(myX, myY, target.x, target.y, BOMB_SPEED, tick));
     }
 
@@ -726,6 +791,133 @@ export class BotBrain {
   }
 
   // ---------------------------------------------------------------------------
+  // TAKE (pick up armies → drop on enemy planet)
+  // ---------------------------------------------------------------------------
+
+  private doTake(
+    myX: number,
+    myY: number,
+    tick: number,
+    planets: ClientPlanet[],
+    self: ClientGameState["self"],
+    mySelf: ClientShip,
+  ): PlayerInput[] {
+    this.ticksInState++;
+    const inputs: PlayerInput[] = [];
+
+    const stats = SHIP_STATS[mySelf.shipType];
+    const capacity = Math.min(
+      stats.maxArmies,
+      Math.floor(self.kills) * stats.armiesPerKill,
+    );
+
+    // Abort if we lost our kills (died and respawned) or tmode ended
+    if (capacity <= 0 || !self.tmode) {
+      this.transition(BotAIState.PATROL);
+      return inputs;
+    }
+
+    const targetPlanet = planets.find((p) => p.planetId === this.takePlanetId);
+
+    // Target planet already taken or no longer exists
+    if (!targetPlanet || targetPlanet.team === this.team) {
+      this.transition(BotAIState.PATROL);
+      return inputs;
+    }
+
+    if (this.takePhase === "pickup") {
+      // Already carrying armies? Switch to drop
+      if (self.armies > 0) {
+        this.takePhase = "drop";
+        return inputs;
+      }
+
+      // Find a friendly planet with enough armies to beam from
+      let pickup = planets.find((p) => p.planetId === this.takePickupPlanetId);
+      if (
+        !pickup ||
+        pickup.team !== this.team ||
+        pickup.armies < BEAM_MIN_ARMIES
+      ) {
+        const fresh = nearestFriendlyPlanet(myX, myY, this.team, planets);
+        if (!fresh || fresh.armies < BEAM_MIN_ARMIES) {
+          this.transition(BotAIState.PATROL);
+          return inputs;
+        }
+        this.takePickupPlanetId = fresh.planetId;
+        pickup = fresh;
+      }
+
+      const dist = distance(myX, myY, pickup.x, pickup.y);
+      if (dist <= ORBIT_DIST) {
+        if (mySelf.shieldsUp) {
+          inputs.push({ command: InputCommand.SHIELD_TOGGLE, value: 0, tick });
+        }
+        inputs.push({ command: InputCommand.ORBIT, value: 0, tick });
+        inputs.push({ command: InputCommand.SET_SPEED, value: 0, tick });
+        if (mySelf.beaming !== 1) {
+          inputs.push({ command: InputCommand.BEAM_UP, value: 0, tick });
+        }
+        if (self.armies >= capacity) {
+          this.takePhase = "drop";
+        }
+      } else {
+        inputs.push(...shieldsUp(mySelf, tick));
+        inputs.push(...moveTo(myX, myY, pickup.x, pickup.y, TAKE_SPEED, tick));
+      }
+    } else {
+      // Drop phase
+      if (self.armies <= 0) {
+        // Out of armies — if planet still enemy, go pick up more
+        if (targetPlanet.team !== this.team) {
+          this.takePhase = "pickup";
+        } else {
+          this.transition(BotAIState.PATROL);
+        }
+        return inputs;
+      }
+
+      const dist = distance(myX, myY, targetPlanet.x, targetPlanet.y);
+      if (dist <= ORBIT_DIST) {
+        if (mySelf.shieldsUp) {
+          inputs.push({ command: InputCommand.SHIELD_TOGGLE, value: 0, tick });
+        }
+        inputs.push({ command: InputCommand.ORBIT, value: 0, tick });
+        inputs.push({ command: InputCommand.SET_SPEED, value: 0, tick });
+        if (mySelf.beaming !== 2) {
+          inputs.push({ command: InputCommand.BEAM_DOWN, value: 0, tick });
+        }
+      } else {
+        inputs.push(...shieldsUp(mySelf, tick));
+        inputs.push(
+          ...moveTo(myX, myY, targetPlanet.x, targetPlanet.y, TAKE_SPEED, tick),
+        );
+      }
+    }
+
+    return inputs;
+  }
+
+  private findTakeablePlanet(
+    myX: number,
+    myY: number,
+    planets: ClientPlanet[],
+  ): ClientPlanet | null {
+    let best: ClientPlanet | null = null;
+    let bestDist = Infinity;
+    for (const p of planets) {
+      if (p.team === this.team) continue;
+      if (p.armies > TAKE_MAX_ENEMY_ARMIES) continue;
+      const d = distance(myX, myY, p.x, p.y);
+      if (d < bestDist) {
+        bestDist = d;
+        best = p;
+      }
+    }
+    return best;
+  }
+
+  // ---------------------------------------------------------------------------
   // State transition helpers
   // ---------------------------------------------------------------------------
 
@@ -752,6 +944,10 @@ export class BotBrain {
         break;
       case BotAIState.OGG:
         this.oggTargetSlot = targetId;
+        break;
+      case BotAIState.TAKE:
+        this.takePlanetId = targetId;
+        this.takePhase = "pickup";
         break;
       default:
         break;

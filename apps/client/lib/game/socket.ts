@@ -4,34 +4,38 @@ import {
   serializeInput,
   InputCommand,
   type ClientGameState,
+  type ChatMessage,
+  type KillEvent,
+  type RosterMap,
 } from "@netrek/shared";
 
 // ---------------------------------------------------------------------------
 // Singleton socket — lives outside React lifecycle
 // ---------------------------------------------------------------------------
 
-// Strip /v1 suffix — WebSocket gateway is at the root, not behind the REST prefix
-const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3012"
-).replace(/\/v1$/, "");
-
 let socket: Socket | null = null;
 let stateCallback: ((state: ClientGameState) => void) | null = null;
 let connectCallback: (() => void) | null = null;
 let disconnectCallback: (() => void) | null = null;
-let joinCallback:
-  | ((result: { slot: number } | { error: string }) => void)
+let joinedCallback: ((data: { slot: number }) => void) | null = null;
+let chatCallback: ((msg: ChatMessage) => void) | null = null;
+let killCallback: ((event: KillEvent) => void) | null = null;
+let rosterCallback: ((roster: RosterMap) => void) | null = null;
+let gameWinCallback:
+  | ((data: { winningTeam: number; losingTeam: number; type: string }) => void)
   | null = null;
 
 export function getSocket(): Socket | null {
   return socket;
 }
 
-export function connect(): Socket {
-  if (socket?.connected) return socket;
+export function connect(wsUrl: string, gameToken: string): Socket {
+  if (socket) {
+    socket.disconnect();
+  }
 
-  socket = io(`${API_URL}/game`, {
-    withCredentials: true, // sends auth cookies automatically
+  socket = io(`${wsUrl}/game`, {
+    auth: { token: gameToken },
     transports: ["websocket"],
     autoConnect: true,
   });
@@ -49,6 +53,29 @@ export function connect(): Socket {
     const state = deserializeGameState(data);
     stateCallback(state);
   });
+
+  socket.on("joined", (data: { slot: number }) => {
+    joinedCallback?.(data);
+  });
+
+  socket.on("chat", (msg: ChatMessage) => {
+    chatCallback?.(msg);
+  });
+
+  socket.on("kill", (event: KillEvent) => {
+    killCallback?.(event);
+  });
+
+  socket.on("roster", (roster: RosterMap) => {
+    rosterCallback?.(roster);
+  });
+
+  socket.on(
+    "game_win",
+    (data: { winningTeam: number; losingTeam: number; type: string }) => {
+      gameWinCallback?.(data);
+    },
+  );
 
   return socket;
 }
@@ -76,26 +103,31 @@ export function onDisconnect(cb: () => void): void {
   disconnectCallback = cb;
 }
 
-export function onJoinResult(
-  cb: (result: { slot: number } | { error: string }) => void,
+export function onJoined(cb: (data: { slot: number }) => void): void {
+  joinedCallback = cb;
+}
+
+export function onChat(cb: (msg: ChatMessage) => void): void {
+  chatCallback = cb;
+}
+
+export function onKill(cb: (event: KillEvent) => void): void {
+  killCallback = cb;
+}
+
+export function onRoster(cb: (roster: RosterMap) => void): void {
+  rosterCallback = cb;
+}
+
+export function onGameWin(
+  cb: (data: { winningTeam: number; losingTeam: number; type: string }) => void,
 ): void {
-  joinCallback = cb;
+  gameWinCallback = cb;
 }
 
 // ---------------------------------------------------------------------------
 // Commands (sent to server)
 // ---------------------------------------------------------------------------
-
-export function sendJoin(team: number, shipType: number): void {
-  if (!socket) return;
-  socket.emit(
-    "join",
-    { team, shipType },
-    (result: { slot: number } | { error: string }) => {
-      joinCallback?.(result);
-    },
-  );
-}
 
 export function sendInput(command: InputCommand, value: number): void {
   if (!socket) return;
@@ -103,7 +135,24 @@ export function sendInput(command: InputCommand, value: number): void {
   socket.emit("input", buf);
 }
 
-export function sendRespawn(shipType: number): void {
+export function sendRespawn(
+  shipType: number,
+  callback?: (result: {
+    ok: boolean;
+    reason?: string;
+    cooldownRemainingSec?: number;
+    remainingSec?: number;
+  }) => void,
+): void {
   if (!socket) return;
-  socket.emit("respawn", { shipType });
+  socket.emit("respawn", { shipType }, callback);
+}
+
+export function sendChat(
+  text: string,
+  team: number,
+  targetSlot?: number,
+): void {
+  if (!socket) return;
+  socket.emit("chat", { text, team, targetSlot });
 }

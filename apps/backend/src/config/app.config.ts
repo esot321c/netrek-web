@@ -15,9 +15,9 @@ export class AppConfig {
 
   get api() {
     return {
-      port: parseInt(this.configService.get("API_PORT") ?? "3021", 10),
+      port: parseInt(this.configService.get("API_PORT") ?? "3012", 10),
       corsOrigin:
-        this.configService.get("CORS_ORIGIN") ?? "http://localhost:3020",
+        this.configService.get("CORS_ORIGIN") ?? "http://localhost:3011",
     };
   }
 
@@ -77,6 +77,25 @@ export class AppConfig {
   get database() {
     return {
       url: this.configService.getOrThrow<string>("DATABASE_URL"),
+    };
+  }
+
+  get gameToken() {
+    return {
+      privateKey: this.configService.get("GAME_TOKEN_PRIVATE_KEY") ?? "",
+      ttlSeconds: parseInt(
+        this.configService.get("GAME_TOKEN_TTL_SECONDS") ?? "30",
+        10,
+      ),
+    };
+  }
+
+  get serverHeartbeat() {
+    return {
+      timeoutSeconds: parseInt(
+        this.configService.get("SERVER_HEARTBEAT_TIMEOUT") ?? "90",
+        10,
+      ),
     };
   }
 }

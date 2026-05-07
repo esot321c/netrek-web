@@ -48,6 +48,7 @@ function makeShip(overrides: Partial<ClientShip> = {}): ClientShip {
     tractorTarget: -1,
     pressorTarget: -1,
     alertStatus: AlertStatus.GREEN,
+    docked: false,
     ...overrides,
   };
 }
@@ -80,6 +81,7 @@ function makeSelf(overrides: Partial<ClientSelfExtra> = {}): ClientSelfExtra {
     lockType: 0,
     lockTargetId: -1,
     tmode: false,
+    surrenderTimer: 0,
     ...overrides,
   };
 }
@@ -111,6 +113,7 @@ function makeState(
     torps: [] as ClientTorp[],
     phasers: [] as ClientPhaser[],
     explosions: [] as ClientExplosion[],
+    plasmas: [],
     planets: [friendlyPlanet, ...extraPlanets],
     self: makeSelf(selfOverrides),
   };
@@ -237,6 +240,7 @@ describe("BotBrain", () => {
       torps: [],
       phasers: [],
       explosions: [],
+      plasmas: [],
       planets: [repairPlanet],
       self: makeSelf({ hullDamage: 65, fuel: 5000 }),
     };

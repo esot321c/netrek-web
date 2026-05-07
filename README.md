@@ -11,37 +11,51 @@ Netrek is one of the oldest internet team games, dating back to 1988. Four teams
 Monorepo with pnpm workspaces and Turborepo:
 
 - **`packages/shared`** — Game constants, types, physics, and protocol. Shared by client and server.
-- **`apps/server`** — NestJS authoritative game server. 10Hz game loop, WebSocket gateway, PostgreSQL for persistent data.
-- **`apps/client`** — Next.js client. Canvas 2D rendering at 60fps with interpolation, retro pixel art style.
+- **`apps/backend`** — NestJS backend. Auth (Google OAuth, JWT), user accounts, server registry, lobby API, stats, match history. REST-only, port 3012.
+- **`apps/server`** — NestJS game server. 10Hz authoritative game loop, WebSocket gateway, bot manager. In-memory only — no database. Port 3013.
+- **`apps/client`** — Next.js client. Canvas 2D rendering at 60fps with interpolation, retro pixel art style. Port 3011.
 - **`packages/ui`** — Shared React UI components (shadcn/ui).
 
-## Quick Start
+## Development
 
 ### Prerequisites
 
 - Node.js 20+
 - pnpm 9+
-- PostgreSQL 15+ (for accounts/stats)
-- Redis (for sessions)
+- PostgreSQL
+- Redis
 
 ### Setup
 
 ```bash
-# Install dependencies
 pnpm install
+cp apps/backend/.env.example apps/backend/.env
+cp apps/server/.env.example apps/server/.env
+cp apps/client/.env.example apps/client/.env
 
-# Copy environment config
-cp .env.example .env
-# Edit .env with your database and Redis connection strings
+# Edit apps/backend/.env with your database URL, JWT secret, and Google OAuth credentials
 
-# Run database migrations
-pnpm --filter @netrek/server prisma:migrate
-
-# Start development servers
-pnpm dev
+cd apps/backend && pnpm db:migrate
 ```
 
-The client runs at `http://localhost:3000` and the game server at `http://localhost:3001`.
+### Running
+
+```bash
+# Terminal 1: Backend (auth, lobby, stats)
+cd apps/backend && pnpm dev
+
+# Terminal 2: Game server
+cd apps/server && pnpm dev
+
+# Terminal 3: Client
+cd apps/client && pnpm dev
+```
+
+The backend runs on port 3012, the game server on port 3013, and the client on port 3011.
+
+### Standalone Mode
+
+The game server can run without a backend for local development. Just omit `SERVER_ID` and `SERVER_TOKEN` from the `.env`. Players won't be able to join through the lobby — connect directly via the client.
 
 ### Build
 

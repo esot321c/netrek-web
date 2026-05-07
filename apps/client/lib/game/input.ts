@@ -1,6 +1,26 @@
-import { InputCommand, LockType, ShipStatus } from "@netrek/shared";
-import { sendInput } from "./socket";
+import {
+  InputCommand,
+  LockType,
+  ShipStatus,
+  ShipType,
+  SHIP_STATS,
+} from "@netrek/shared";
+import { sendInput, sendChat } from "./socket";
 import { getMySlot, getLatestSnapshot } from "./state";
+import {
+  TypingState,
+  getTypingState,
+  startMessage,
+  startMacroMode,
+  selectDestination,
+  appendChar,
+  deleteChar,
+  getFinishedMessage,
+  cancelTyping,
+  getRoster,
+  type ChatDest,
+} from "./chat";
+import { loadMacros, expandMacro } from "./macros";
 
 // ---------------------------------------------------------------------------
 // Input capture — keyboard + mouse
@@ -12,6 +32,23 @@ let viewportCenterY = 0;
 let viewportScale = 1; // pixels per game unit
 let lastMouseX = 0; // last known mouse position (client pixels)
 let lastMouseY = 0;
+
+let chatChangeCallback: (() => void) | null = null;
+let refitCallback: (() => void) | null = null;
+
+export function onChatChange(cb: () => void): void {
+  chatChangeCallback = cb;
+}
+
+export function onRefitKey(cb: () => void): void {
+  refitCallback = cb;
+}
+
+function notifyChatChange(): void {
+  chatChangeCallback?.();
+}
+
+let macroPendingText: string | null = null;
 
 // Called by the renderer each frame so input knows the current viewport
 export function updateViewport(
@@ -110,6 +147,53 @@ function lockNearestEntity(): void {
   }
 }
 
+/** Lock the nearest planet or starbase (no regular ships). Used by `;` key. */
+function lockNearestPlanetOrSB(): void {
+  if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  const px = lastMouseX - rect.left;
+  const py = lastMouseY - rect.top;
+  const gx = viewportCenterX + (px - canvas.width / 2) / viewportScale;
+  const gy = viewportCenterY + (py - canvas.height / 2) / viewportScale;
+
+  const snap = getLatestSnapshot();
+  if (!snap) return;
+
+  let bestType = LockType.NONE;
+  let bestId = -1;
+  let bestDist = Infinity;
+
+  for (let i = 0; i < snap.planets.length; i++) {
+    const p = snap.planets[i]!;
+    const dx = p.x - gx;
+    const dy = p.y - gy;
+    const d = dx * dx + dy * dy;
+    if (d < bestDist) {
+      bestDist = d;
+      bestType = LockType.PLANET;
+      bestId = p.planetId;
+    }
+  }
+
+  for (let i = 0; i < snap.ships.length; i++) {
+    const s = snap.ships[i]!;
+    if (s.shipType !== ShipType.SB) continue;
+    if (s.status !== ShipStatus.ALIVE) continue;
+    const dx = s.x - gx;
+    const dy = s.y - gy;
+    const d = dx * dx + dy * dy;
+    if (d < bestDist) {
+      bestDist = d;
+      bestType = LockType.PLAYER;
+      bestId = s.slotIndex;
+    }
+  }
+
+  if (bestType !== LockType.NONE && bestId >= 0) {
+    sendInput(InputCommand.LOCK, (bestType << 8) | bestId);
+  }
+}
+
 /** Find the nearest ship to the mouse cursor (any team). Returns slot or -1. */
 function findNearestShip(): number {
   if (!canvas) return -1;
@@ -167,9 +251,47 @@ function handleMouseDown(e: MouseEvent): void {
 }
 
 function handleKeyDown(e: KeyboardEvent): void {
+  const typing = getTypingState();
+
+  // --- Typing mode: route keys to chat buffer ---
+  if (typing === TypingState.DEST_PROMPT) {
+    e.preventDefault();
+    handleDestKey(e.key);
+    notifyChatChange();
+    return;
+  }
+
+  if (typing === TypingState.MACRO_WAIT) {
+    e.preventDefault();
+    handleMacroKey(e.key);
+    notifyChatChange();
+    return;
+  }
+
+  if (typing === TypingState.TYPING) {
+    e.preventDefault();
+    handleTypingKey(e);
+    notifyChatChange();
+    return;
+  }
+
+  // --- IDLE: normal game input ---
   if (getMySlot() < 0) return;
-  // Ignore modified keys (Ctrl+, Alt+, Meta+) — let browser handle those
   if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+  // Chat keys (intercept before game keys)
+  if (e.key === "m") {
+    e.preventDefault();
+    startMessage();
+    notifyChatChange();
+    return;
+  }
+  if (e.key === "X") {
+    e.preventDefault();
+    startMacroMode();
+    notifyChatChange();
+    return;
+  }
 
   // Number keys 0-9 set warp speed
   if (e.key >= "0" && e.key <= "9") {
@@ -201,6 +323,9 @@ function handleKeyDown(e: KeyboardEvent): void {
       sendInput(InputCommand.SHIELD_TOGGLE, 0);
       break;
     case "r":
+      e.preventDefault();
+      refitCallback?.();
+      break;
     case "R":
       e.preventDefault();
       sendInput(InputCommand.REPAIR_TOGGLE, 0);
@@ -244,6 +369,260 @@ function handleKeyDown(e: KeyboardEvent): void {
     case "l":
       e.preventDefault();
       lockNearestEntity();
+      break;
+    case "*": {
+      e.preventDefault();
+      const snap = getLatestSnapshot();
+      if (!snap) break;
+      const myShipState = snap.ships.find((s) => s.slotIndex === getMySlot());
+      if (!myShipState) break;
+      // Find friendly SB
+      for (const s of snap.ships) {
+        if (
+          s.team === myShipState.team &&
+          s.shipType === ShipType.SB &&
+          s.status === ShipStatus.ALIVE
+        ) {
+          // Lock onto SB
+          sendInput(InputCommand.LOCK, (LockType.PLAYER << 8) | s.slotIndex);
+          // Set max warp
+          sendInput(InputCommand.SET_SPEED, 99);
+          break;
+        }
+      }
+      break;
+    }
+    case "f": {
+      e.preventDefault();
+      if (!canvas) break;
+      const rect = canvas.getBoundingClientRect();
+      const mx = lastMouseX - rect.left;
+      const my = lastMouseY - rect.top;
+      const gx = viewportCenterX + (mx - canvas.width / 2) / viewportScale;
+      const gy = viewportCenterY + (my - canvas.height / 2) / viewportScale;
+      const snap2 = getLatestSnapshot();
+      if (!snap2) break;
+      const me = snap2.ships.find((s) => s.slotIndex === getMySlot());
+      if (!me) break;
+      const dx = gx - me.x;
+      const dy = gy - me.y;
+      const angle = Math.atan2(dx, -dy);
+      const plasmaDir =
+        ((Math.round((angle / (2 * Math.PI)) * 256) % 256) + 256) % 256;
+      sendInput(InputCommand.FIRE_PLASMA, plasmaDir);
+      break;
+    }
+    case "o":
+      e.preventDefault();
+      sendInput(InputCommand.ORBIT, 0);
+      break;
+    case ";":
+      e.preventDefault();
+      lockNearestPlanetOrSB();
+      break;
+    case "k": {
+      e.preventDefault();
+      if (!canvas) break;
+      const kRect = canvas.getBoundingClientRect();
+      const kpx = lastMouseX - kRect.left;
+      const kpy = lastMouseY - kRect.top;
+      const kdx = kpx - canvas.width / 2;
+      const kdy = kpy - canvas.height / 2;
+      const kRad = Math.atan2(kdx, -kdy);
+      const kDir =
+        Math.round(
+          ((((kRad % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) /
+            (Math.PI * 2)) *
+            256,
+        ) & 0xff;
+      sendInput(InputCommand.SET_DIRECTION, kDir);
+      break;
+    }
+    case "<":
+    case ",": {
+      e.preventDefault();
+      const snapSpeed = getLatestSnapshot();
+      const myShipDown = snapSpeed?.ships.find(
+        (s) => s.slotIndex === getMySlot(),
+      );
+      if (myShipDown && myShipDown.speed > 0) {
+        sendInput(InputCommand.SET_SPEED, myShipDown.speed - 1);
+      }
+      break;
+    }
+    case ">":
+    case ".": {
+      e.preventDefault();
+      const snapSpeedUp = getLatestSnapshot();
+      const myShipUp = snapSpeedUp?.ships.find(
+        (s) => s.slotIndex === getMySlot(),
+      );
+      if (myShipUp) {
+        sendInput(InputCommand.SET_SPEED, myShipUp.speed + 1);
+      }
+      break;
+    }
+    case "#": {
+      e.preventDefault();
+      const snapHalf = getLatestSnapshot();
+      const myShipHalf = snapHalf?.ships.find(
+        (s) => s.slotIndex === getMySlot(),
+      );
+      if (myShipHalf) {
+        const maxSpd = SHIP_STATS[myShipHalf.shipType].maxSpeed;
+        sendInput(InputCommand.SET_SPEED, Math.floor(maxSpd / 2));
+      }
+      break;
+    }
+    case "$":
+      e.preventDefault();
+      sendInput(InputCommand.TRACTOR, 0xff);
+      sendInput(InputCommand.PRESSOR, 0xff);
+      break;
+    case "_": {
+      e.preventDefault();
+      const tractorOnSlot = findNearestShip();
+      if (tractorOnSlot >= 0) {
+        sendInput(InputCommand.TRACTOR, tractorOnSlot);
+      }
+      break;
+    }
+    case "^": {
+      e.preventDefault();
+      const pressorOnSlot = findNearestShip();
+      if (pressorOnSlot >= 0) {
+        sendInput(InputCommand.PRESSOR, pressorOnSlot);
+      }
+      break;
+    }
+    case "[":
+      e.preventDefault();
+      sendInput(InputCommand.SHIELD_TOGGLE, 2); // shields down
+      break;
+    case "]":
+      e.preventDefault();
+      sendInput(InputCommand.SHIELD_TOGGLE, 1); // shields up
+      break;
+    case "{":
+      e.preventDefault();
+      sendInput(InputCommand.CLOAK_TOGGLE, 1); // cloak on
+      break;
+    case "}":
+      e.preventDefault();
+      sendInput(InputCommand.CLOAK_TOGGLE, 2); // cloak off
+      break;
+  }
+}
+
+function handleDestKey(key: string): void {
+  if (key === "Escape") {
+    macroPendingText = null;
+    cancelTyping();
+    return;
+  }
+
+  let dest: ChatDest | null = null;
+
+  if (key === "T" || key === "t") {
+    const snap = getLatestSnapshot();
+    const myShip = snap?.ships.find((s) => s.slotIndex === getMySlot());
+    if (myShip) {
+      dest = { type: "team", team: myShip.team };
+    }
+  } else if (key === "A" || key === "a") {
+    dest = { type: "all" };
+  } else {
+    const slotNum = parseInt(key, 16);
+    if (!isNaN(slotNum) && slotNum >= 0 && slotNum <= 15) {
+      dest = { type: "personal", targetSlot: slotNum };
+    }
+  }
+
+  if (!dest) return;
+
+  if (macroPendingText) {
+    sendChatFromDest(macroPendingText, dest);
+    macroPendingText = null;
+    cancelTyping();
+  } else {
+    selectDestination(dest);
+  }
+}
+
+function handleMacroKey(key: string): void {
+  if (key === "Escape") {
+    cancelTyping();
+    return;
+  }
+
+  const macros = loadMacros();
+  const macro = macros[key];
+  if (!macro) {
+    cancelTyping();
+    return;
+  }
+
+  const snap = getLatestSnapshot();
+  if (!snap) {
+    cancelTyping();
+    return;
+  }
+
+  const expanded = expandMacro(macro.text, snap, getMySlot(), getRoster());
+
+  if (macro.dest === "T") {
+    const myShip = snap.ships.find((s) => s.slotIndex === getMySlot());
+    if (myShip) {
+      sendChat(expanded, myShip.team);
+    }
+  } else if (macro.dest === "A") {
+    sendChat(expanded, -1);
+  } else {
+    macroPendingText = expanded;
+    startMessage();
+    return;
+  }
+
+  cancelTyping();
+}
+
+function handleTypingKey(e: KeyboardEvent): void {
+  if (e.key === "Escape") {
+    macroPendingText = null;
+    cancelTyping();
+    return;
+  }
+
+  if (e.key === "Enter") {
+    const msg = getFinishedMessage();
+    if (msg) {
+      sendChatFromDest(msg.text, msg.dest);
+    }
+    macroPendingText = null;
+    cancelTyping();
+    return;
+  }
+
+  if (e.key === "Backspace") {
+    deleteChar();
+    return;
+  }
+
+  if (e.key.length === 1) {
+    appendChar(e.key);
+  }
+}
+
+function sendChatFromDest(text: string, dest: ChatDest): void {
+  switch (dest.type) {
+    case "team":
+      sendChat(text, dest.team);
+      break;
+    case "all":
+      sendChat(text, -1);
+      break;
+    case "personal":
+      sendChat(text, -1, dest.targetSlot);
       break;
   }
 }

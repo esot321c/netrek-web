@@ -7,15 +7,11 @@ export default defineConfig({
     globals: true,
     root: "./",
     include: ["src/**/*.spec.ts", "src/**/*.test.ts"],
-    setupFiles: ["./src/test/setup.ts"],
+    setupFiles: [],
     testTimeout: 15000,
     fileParallelism: false,
   },
-  resolve: {
-    alias: {
-      "generated/prisma": path.resolve(__dirname, "./generated/prisma"),
-    },
-  },
+  resolve: {},
   esbuild: false,
   oxc: false,
   plugins: [

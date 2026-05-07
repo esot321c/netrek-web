@@ -46,6 +46,7 @@ function makeShip(overrides: Partial<ClientShip> = {}): ClientShip {
     tractorTarget: -1,
     pressorTarget: -1,
     alertStatus: AlertStatus.GREEN,
+    docked: false,
     ...overrides,
   };
 }
@@ -65,6 +66,7 @@ function makeSelf(overrides: Partial<ClientSelfExtra> = {}): ClientSelfExtra {
     lockType: 0,
     lockTargetId: -1,
     tmode: false,
+    surrenderTimer: 0,
     ...overrides,
   };
 }

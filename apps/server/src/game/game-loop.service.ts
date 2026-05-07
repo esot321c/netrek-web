@@ -35,7 +35,6 @@ import {
   BOMB_INTERVAL,
   BEAM_MIN_ARMIES,
   BEAM_INTERVAL,
-  CLOAK_FUEL_PER_TICK,
   UNCLOAK_TICKS,
   TRACTOR_FUEL_PER_TICK,
   TRACTOR_ENGINE_HEAT,
@@ -52,6 +51,10 @@ import {
   SURRENDER_FREEZE_PLANETS,
   SURRENDER_CLEAR_PLANETS,
   SURRENDER_TIMER_TICKS,
+  MAX_DOCK_SHIPS,
+  DOCK_DIST,
+  DOCK_SHIELD_REPAIR_MULT,
+  DOCK_FUEL_RECHARGE_MULT,
   PlanetFeature,
   ShipStatus,
   ShipType,
@@ -80,14 +83,38 @@ import {
   LockType,
   MAX_PLAYERS,
   Team,
+  type KillEvent,
+  type PlasmaState,
+  GALAXY_WIDTH,
+  GALAXY_HEIGHT,
+  PLASMA_SPEED,
+  PLASMA_DAMAGE,
+  PLASMA_SPLASH_RADIUS,
+  PLASMA_FUEL_COST,
+  PLASMA_HEAT,
+  PLASMA_LIFETIME,
+  PLASMA_TURN_RATE,
+  PLASMA_MIN_KILLS,
+  PLASMA_HIT_RADIUS,
+  PLASMA_LOCK_RANGE,
 } from "@netrek/shared";
 import { GameService } from "./game.service";
 import { BotManagerService } from "./bot";
 import { loadBotConfig, type BotConfig } from "./bot/bot-config";
+import { StatReporterService } from "../registration/stat-reporter.service";
 
-export const GAME_TICK_EVENT = "game.tick";
-export const GAME_WIN_EVENT = "game.win";
-export const GAME_RESET_EVENT = "game.reset";
+import {
+  GAME_TICK_EVENT,
+  GAME_WIN_EVENT,
+  GAME_RESET_EVENT,
+  GAME_KILL_EVENT,
+} from "./game-events";
+export {
+  GAME_TICK_EVENT,
+  GAME_WIN_EVENT,
+  GAME_RESET_EVENT,
+  GAME_KILL_EVENT,
+} from "./game-events";
 
 @Injectable()
 export class GameLoopService implements OnModuleInit, OnModuleDestroy {
@@ -112,6 +139,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     private readonly gameService: GameService,
     private readonly eventEmitter: EventEmitter2,
     private readonly botManager: BotManagerService,
+    private readonly statReporter: StatReporterService,
   ) {
     this.botConfig = loadBotConfig();
   }
@@ -155,7 +183,11 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
         this.resetGame();
       }
       state.currentTick++;
-      this.eventEmitter.emit(GAME_TICK_EVENT);
+      this.eventEmitter.emit(GAME_TICK_EVENT, {
+        alertStatuses: this.alertStatuses,
+        tmode: this.tmode,
+        surrenderTimers: this.surrenderTimers,
+      });
       this.botManager.setTMode(this.tmode);
       return;
     }
@@ -166,11 +198,17 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     // Step 1b: Update lock steering (before movement so desiredDirection is set)
     this.updateLock(state.ships, state.planets);
 
+    // Step 1c: Update docking (sync positions, force-undock on SB death)
+    this.updateDocking(state.ships);
+
     // Step 2: Update movement (orbiting ships don't move)
     this.updateMovement(state.ships);
 
     // Step 3: Move torpedoes and check collisions
     this.updateTorpedoes();
+
+    // Step 3b: Move plasmas, track targets, check collisions
+    this.updatePlasmas();
 
     // Step 4: Phaser cooldowns
     this.updatePhaserCooldowns(state.ships);
@@ -215,7 +253,10 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     state.currentTick++;
 
     // Emit tick event for broadcast
-    this.eventEmitter.emit(GAME_TICK_EVENT);
+    this.eventEmitter.emit(GAME_TICK_EVENT, {
+      alertStatuses: this.alertStatuses,
+      tmode: this.tmode,
+    });
 
     this.botManager.setTMode(this.tmode);
   }
@@ -241,6 +282,19 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
       const { inputs, count } = inputQueue.drain(slot);
       for (let i = 0; i < count; i++) {
         const input = inputs[i]!;
+
+        if (ship.dockedAt >= 0) {
+          if (
+            input.command === InputCommand.SET_SPEED ||
+            input.command === InputCommand.SET_DIRECTION ||
+            input.command === InputCommand.FIRE_TORP ||
+            input.command === InputCommand.FIRE_PHASER ||
+            input.command === InputCommand.FIRE_PLASMA
+          ) {
+            this.undock(ship);
+          }
+        }
+
         switch (input.command) {
           case InputCommand.SET_DIRECTION:
             ship.desiredDirection = input.value & 0xff;
@@ -272,14 +326,17 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
             this.firePhaser(ship, input.value & 0xff);
             break;
 
-          case InputCommand.SHIELD_TOGGLE:
-            ship.shieldsUp = !ship.shieldsUp;
-            // Raising shields interrupts bombing and beaming
+          case InputCommand.SHIELD_TOGGLE: {
+            const shieldVal = input.value & 0xff;
+            if (shieldVal === 1) ship.shieldsUp = true;
+            else if (shieldVal === 2) ship.shieldsUp = false;
+            else ship.shieldsUp = !ship.shieldsUp;
             if (ship.shieldsUp) {
               ship.bombing = false;
               ship.beaming = 0;
             }
             break;
+          }
 
           case InputCommand.REPAIR_TOGGLE:
             ship.repairMode = !ship.repairMode;
@@ -310,7 +367,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
             break;
 
           case InputCommand.CLOAK_TOGGLE:
-            this.toggleCloak(ship);
+            this.toggleCloak(ship, input.value & 0xff);
             break;
 
           case InputCommand.TRACTOR:
@@ -332,6 +389,15 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
           case InputCommand.DETONATE_SELF:
             this.detonateSelf(ship);
             break;
+
+          case InputCommand.DOCK:
+            // Reserved for SB docking permission toggle (future)
+            break;
+
+          case InputCommand.FIRE_PLASMA:
+            if (ship.cloaked || ship.uncloakTicks > 0) break;
+            this.firePlasma(ship, input.value & 0xff);
+            break;
         }
       }
     }
@@ -342,20 +408,48 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
   // -------------------------------------------------------------------------
 
   private tryOrbit(ship: ShipState): void {
-    if (ship.orbitPlanetId >= 0) return;
+    if (ship.orbitPlanetId >= 0 || ship.dockedAt >= 0) return;
     if (ship.speed > ORBIT_MAX_SPEED) return;
+
     const planets = this.gameService.state.planets;
-    let bestIdx = -1;
+    let bestPlanetIdx = -1;
     let bestDist = ORBIT_DIST + 1;
     for (let i = 0; i < planets.length; i++) {
       const d = distance(ship.x, ship.y, planets[i]!.x, planets[i]!.y);
       if (d < bestDist) {
         bestDist = d;
-        bestIdx = i;
+        bestPlanetIdx = i;
       }
     }
-    if (bestIdx >= 0) {
-      this.enterOrbit(ship, bestIdx);
+
+    if (ship.shipType !== ShipType.SB) {
+      const ships = this.gameService.state.ships;
+      let bestSbSlot = -1;
+      let bestSbDist = DOCK_DIST + 1;
+      for (let i = 0; i < ships.length; i++) {
+        const sb = ships[i]!;
+        if (
+          sb.status === ShipStatus.ALIVE &&
+          sb.shipType === ShipType.SB &&
+          sb.team === ship.team &&
+          sb.dockedShips.length < MAX_DOCK_SHIPS
+        ) {
+          const d = distance(ship.x, ship.y, sb.x, sb.y);
+          if (d < bestSbDist) {
+            bestSbDist = d;
+            bestSbSlot = i;
+          }
+        }
+      }
+
+      if (bestSbSlot >= 0 && bestSbDist < bestDist) {
+        this.dock(ship, this.gameService.state.ships[bestSbSlot]!);
+        return;
+      }
+    }
+
+    if (bestPlanetIdx >= 0) {
+      this.enterOrbit(ship, bestPlanetIdx);
     }
   }
 
@@ -429,6 +523,49 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private toggleDock(ship: ShipState): void {
+    if (ship.dockedAt >= 0) {
+      this.undock(ship);
+      return;
+    }
+    if (ship.shipType === ShipType.SB) return;
+    const ships = this.gameService.state.ships;
+    for (let i = 0; i < ships.length; i++) {
+      const sb = ships[i]!;
+      if (sb.status !== ShipStatus.ALIVE) continue;
+      if (sb.shipType !== ShipType.SB) continue;
+      if (sb.team !== ship.team) continue;
+      if (sb.dockedShips.length >= MAX_DOCK_SHIPS) continue;
+      const dist = distance(ship.x, ship.y, sb.x, sb.y);
+      if (dist <= DOCK_DIST) {
+        this.dock(ship, sb);
+        return;
+      }
+    }
+  }
+
+  private dock(ship: ShipState, sb: ShipState): void {
+    ship.dockedAt = sb.slotIndex;
+    sb.dockedShips.push(ship.slotIndex);
+    ship.speed = 0;
+    ship.desiredSpeed = 0;
+    ship.tractorTarget = -1;
+    ship.pressorTarget = -1;
+    if (ship.orbitPlanetId >= 0) {
+      this.breakOrbit(ship);
+    }
+  }
+
+  private undock(ship: ShipState): void {
+    const sbSlot = ship.dockedAt;
+    ship.dockedAt = -1;
+    if (sbSlot >= 0) {
+      const sb = this.gameService.state.ships[sbSlot]!;
+      const idx = sb.dockedShips.indexOf(ship.slotIndex);
+      if (idx >= 0) sb.dockedShips.splice(idx, 1);
+    }
+  }
+
   /** Each tick: steer locked ships toward their target, auto-orbit planets on arrival. */
   private updateLock(ships: ShipState[], planets: PlanetState[]): void {
     for (let i = 0; i < ships.length; i++) {
@@ -461,7 +598,23 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
         );
       } else if (ship.lockType === LockType.PLAYER) {
         const target = ships[ship.lockTargetId];
-        if (!target || target.status !== ShipStatus.ALIVE) {
+        if (!target || target.status !== ShipStatus.ALIVE || target.cloaked) {
+          this.clearLock(ship);
+          continue;
+        }
+
+        const dist = distance(ship.x, ship.y, target.x, target.y);
+
+        // Auto-dock: locked onto a friendly SB and within range
+        if (
+          target.shipType === ShipType.SB &&
+          target.team === ship.team &&
+          ship.shipType !== ShipType.SB &&
+          dist <= DOCK_DIST &&
+          ship.dockedAt < 0 &&
+          target.dockedShips.length < MAX_DOCK_SHIPS
+        ) {
+          this.dock(ship, target);
           this.clearLock(ship);
           continue;
         }
@@ -474,6 +627,27 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
           target.y,
         );
       }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Docking (sync positions, force-undock on SB death)
+  // -------------------------------------------------------------------------
+
+  private updateDocking(ships: ShipState[]): void {
+    for (let i = 0; i < ships.length; i++) {
+      const ship = ships[i]!;
+      if (ship.dockedAt < 0) continue;
+      if (ship.status !== ShipStatus.ALIVE) continue;
+      const sb = ships[ship.dockedAt]!;
+      if (sb.status !== ShipStatus.ALIVE) {
+        this.undock(ship);
+        continue;
+      }
+      ship.x = sb.x;
+      ship.y = sb.y;
+      ship.speed = 0;
+      ship.desiredSpeed = 0;
     }
   }
 
@@ -567,11 +741,11 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
       const roll = Math.random();
       let destroyed: number;
       if (ship.shipType === ShipType.AS) {
-        // AS: 0 (50%), 2 (30%), 3 (10%), 4 (10%)
-        if (roll < 0.5) destroyed = 0;
-        else if (roll < 0.8) destroyed = 2;
-        else if (roll < 0.9) destroyed = 3;
-        else destroyed = 4;
+        // AS always bombs at least 2: 2 (50%), 3 (30%), 4 (10%), 5 (10%)
+        if (roll < 0.5) destroyed = 2;
+        else if (roll < 0.8) destroyed = 3;
+        else if (roll < 0.9) destroyed = 4;
+        else destroyed = 5;
       } else {
         // Normal: 0 (50%), 1 (30%), 2 (10%), 3 (10%)
         if (roll < 0.5) destroyed = 0;
@@ -581,9 +755,18 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
       }
 
       if (destroyed > 0) {
-        const actual = Math.min(destroyed, planet.armies);
-        planet.armies -= actual;
-        ship.kills += actual * KILLS_PER_BOMB;
+        const floor = BOMB_MIN_ARMIES - 1; // Can't bomb below 4
+        const actual = Math.min(destroyed, planet.armies - floor);
+        if (actual > 0) {
+          planet.armies -= actual;
+          if (!ship.playerId.startsWith("bot:")) {
+            this.statReporter.recordArmiesBombed(ship.playerId, actual);
+          }
+          ship.kills += actual * KILLS_PER_BOMB;
+          for (let a = 0; a < actual; a++) {
+            this.gameService.recordSessionArmiesBombed(i);
+          }
+        }
       }
     }
   }
@@ -636,9 +819,6 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     const planet = this.gameService.state.planets[ship.orbitPlanetId];
     if (!planet) return;
 
-    // Must be enemy or neutral planet
-    if (planet.team === ship.team) return;
-
     ship.beaming = 2; // beam down
     ship.bombing = false;
     ship.beamCooldownTicks = BEAM_INTERVAL;
@@ -683,31 +863,35 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
         }
         planet.armies--;
         ship.armies++;
-      } else {
-        // Beam down — drop army on enemy planet
-        if (ship.armies <= 0) {
-          ship.beaming = 0;
-          continue;
+        if (!ship.playerId.startsWith("bot:")) {
+          this.statReporter.recordArmiesBeamed(ship.playerId, 1);
         }
-        if (planet.team === ship.team) {
+      } else {
+        // Beam down — drop army on planet (enemy, neutral, or friendly)
+        if (ship.armies <= 0) {
           ship.beaming = 0;
           continue;
         }
 
         ship.armies--;
 
-        if (planet.armies > 0) {
-          // One friendly army kills one enemy army
+        if (planet.team === ship.team) {
+          // Friendly planet — reinforce
+          planet.armies++;
+        } else if (planet.armies > 0) {
+          // Enemy/neutral — one friendly army kills one enemy army
           planet.armies--;
         } else {
           // Planet captured!
           planet.team = ship.team;
           planet.armies = 1;
           ship.kills += KILLS_PER_CAPTURE;
-          ship.beaming = 0;
+          if (!ship.playerId.startsWith("bot:")) {
+            this.statReporter.recordPlanetTaken(ship.playerId);
+          }
+          this.gameService.recordSessionPlanetTaken(i);
         }
 
-        // Check if no armies left and we're still beaming down
         if (ship.armies <= 0) {
           ship.beaming = 0;
         }
@@ -719,18 +903,29 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
   // Cloaking
   // -------------------------------------------------------------------------
 
-  private toggleCloak(ship: ShipState): void {
-    if (ship.cloaked) {
-      // Start uncloaking
+  private toggleCloak(ship: ShipState, mode = 0): void {
+    if (mode === 1) {
+      // Force cloak on
+      if (ship.cloaked || ship.uncloakTicks > 0) return;
+      ship.cloaked = true;
+      ship.tractorTarget = -1;
+      ship.pressorTarget = -1;
+    } else if (mode === 2) {
+      // Force cloak off
+      if (!ship.cloaked) return;
       ship.cloaked = false;
       ship.uncloakTicks = UNCLOAK_TICKS;
     } else {
-      // Cloak — can't cloak while uncloaking
-      if (ship.uncloakTicks > 0) return;
-      ship.cloaked = true;
-      // Cloaking disables tractor/pressor
-      ship.tractorTarget = -1;
-      ship.pressorTarget = -1;
+      // Toggle
+      if (ship.cloaked) {
+        ship.cloaked = false;
+        ship.uncloakTicks = UNCLOAK_TICKS;
+      } else {
+        if (ship.uncloakTicks > 0) return;
+        ship.cloaked = true;
+        ship.tractorTarget = -1;
+        ship.pressorTarget = -1;
+      }
     }
   }
 
@@ -744,9 +939,10 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
         ship.uncloakTicks--;
       }
 
-      // Cloak fuel cost
+      // Cloak fuel cost (AS burns half as much)
       if (ship.cloaked) {
-        ship.fuel -= CLOAK_FUEL_PER_TICK;
+        const stats = SHIP_STATS[ship.shipType];
+        ship.fuel -= stats.cloakFuelPerTick;
         if (ship.fuel <= 0) {
           ship.fuel = 0;
           ship.cloaked = false;
@@ -933,6 +1129,11 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     // Validate ship type
     if (shipTypeValue < 0 || shipTypeValue > ShipType.SB) return;
 
+    if (shipTypeValue === ShipType.SB) {
+      const sbCheck = this.gameService.checkSbGates(ship.slotIndex, ship.team);
+      if (!sbCheck.ok) return;
+    }
+
     ship.refitTicks = REFIT_TICKS;
     ship.refitShipType = shipTypeValue;
     ship.speed = 0;
@@ -993,6 +1194,55 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     torp.damage = stats.torpDamage;
     torp.ticksRemaining =
       TORP_LIFETIME_BASE + Math.floor(Math.random() * TORP_LIFETIME_VARIANCE);
+  }
+
+  private firePlasma(ship: ShipState, direction: number): void {
+    if (
+      ship.shipType !== ShipType.DD &&
+      ship.shipType !== ShipType.CA &&
+      ship.shipType !== ShipType.BB &&
+      ship.shipType !== ShipType.SB
+    )
+      return;
+
+    if (ship.kills < PLASMA_MIN_KILLS) return;
+    if (ship.weaponBurnoutTicks > 0) return;
+    if (ship.fuel < PLASMA_FUEL_COST) return;
+
+    const plasmas = this.gameService.state.plasmas;
+    for (let i = 0; i < plasmas.length; i++) {
+      if (plasmas[i]!.alive && plasmas[i]!.ownerSlot === ship.slotIndex) return;
+    }
+
+    const plasma = this.gameService.state.allocatePlasma();
+    if (!plasma) return;
+
+    ship.fuel -= PLASMA_FUEL_COST;
+    ship.weaponTemp += PLASMA_HEAT;
+
+    plasma.alive = true;
+    plasma.x = ship.x;
+    plasma.y = ship.y;
+    plasma.direction = direction;
+    plasma.ownerSlot = ship.slotIndex;
+    plasma.team = ship.team;
+    plasma.ticksRemaining = PLASMA_LIFETIME;
+
+    const ships = this.gameService.state.ships;
+    let bestTarget = -1;
+    let bestDist = PLASMA_LOCK_RANGE;
+    for (let i = 0; i < ships.length; i++) {
+      const target = ships[i]!;
+      if (target.status !== ShipStatus.ALIVE) continue;
+      if (target.team === ship.team) continue;
+      if (target.cloaked) continue;
+      const dist = distance(ship.x, ship.y, target.x, target.y);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestTarget = target.slotIndex;
+      }
+    }
+    plasma.targetSlot = bestTarget;
   }
 
   private firePhaser(ship: ShipState, direction: number): void {
@@ -1061,6 +1311,18 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
       phaser.y2 = ship.y - Math.cos(rad) * stats.maxPhaserRange;
       phaser.damage = 0;
     }
+
+    // Phaser can destroy enemy plasmas near the hit point
+    const plasmaArr = this.gameService.state.plasmas;
+    for (let pi = 0; pi < plasmaArr.length; pi++) {
+      const p = plasmaArr[pi]!;
+      if (!p.alive) continue;
+      if (p.team === ship.team) continue;
+      const pdist = distance(phaser.x2, phaser.y2, p.x, p.y);
+      if (pdist <= PLASMA_HIT_RADIUS) {
+        this.explodePlasma(p);
+      }
+    }
   }
 
   private detonate(ship: ShipState): void {
@@ -1081,6 +1343,17 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
 
       // Explode the torp
       this.explodeTorp(torp);
+    }
+
+    // Also detonate enemy plasmas in range
+    const plasmas = this.gameService.state.plasmas;
+    for (let i = 0; i < plasmas.length; i++) {
+      const p = plasmas[i]!;
+      if (!p.alive) continue;
+      if (p.team === ship.team) continue;
+      const pdist = distance(ship.x, ship.y, p.x, p.y);
+      if (pdist > DET_RANGE) continue;
+      this.explodePlasma(p);
     }
   }
 
@@ -1159,6 +1432,22 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
           break;
         }
       }
+
+      // Check collision with plasmas (torps can destroy plasmas)
+      if (torp.alive) {
+        const plasmas = state.plasmas;
+        for (let k = 0; k < plasmas.length; k++) {
+          const p = plasmas[k]!;
+          if (!p.alive) continue;
+          if (p.team === torp.team) continue;
+          const pdist = distance(torp.x, torp.y, p.x, p.y);
+          if (pdist <= PLASMA_HIT_RADIUS) {
+            torp.alive = false;
+            this.explodePlasma(p);
+            break;
+          }
+        }
+      }
     }
   }
 
@@ -1191,6 +1480,105 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
       expl.radius = 0;
       expl.maxRadius = 400;
       expl.ticksRemaining = 8;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Step 3b: Plasmas
+  // -------------------------------------------------------------------------
+
+  private updatePlasmas(): void {
+    const state = this.gameService.state;
+    const plasmas = state.plasmas;
+    const ships = state.ships;
+
+    for (let i = 0; i < plasmas.length; i++) {
+      const p = plasmas[i]!;
+      if (!p.alive) continue;
+
+      p.ticksRemaining--;
+      if (p.ticksRemaining <= 0) {
+        this.explodePlasma(p);
+        continue;
+      }
+
+      // Tracking — steer toward target
+      if (p.targetSlot >= 0) {
+        const target = ships[p.targetSlot]!;
+        if (target.status !== ShipStatus.ALIVE || target.cloaked) {
+          p.targetSlot = -1;
+        } else {
+          const targetDir = angleBetween(p.x, p.y, target.x, target.y);
+          let diff = targetDir - p.direction;
+          if (diff > 128) diff -= 256;
+          if (diff < -128) diff += 256;
+          if (Math.abs(diff) <= PLASMA_TURN_RATE) {
+            p.direction = targetDir;
+          } else {
+            p.direction =
+              (p.direction +
+                (diff > 0 ? PLASMA_TURN_RATE : -PLASMA_TURN_RATE) +
+                256) %
+              256;
+          }
+        }
+      }
+
+      // Move
+      const rad = directionToRadians(p.direction);
+      const vel = PLASMA_SPEED * SPEED_SCALE;
+      p.x += Math.sin(rad) * vel;
+      p.y += -Math.cos(rad) * vel;
+
+      // Out of bounds = die
+      if (p.x < 0 || p.x > GALAXY_WIDTH || p.y < 0 || p.y > GALAXY_HEIGHT) {
+        p.alive = false;
+        continue;
+      }
+
+      // Check collision with ships
+      for (let j = 0; j < ships.length; j++) {
+        const target = ships[j]!;
+        if (target.status !== ShipStatus.ALIVE) continue;
+        if (target.slotIndex === p.ownerSlot) continue;
+
+        const dist = distance(p.x, p.y, target.x, target.y);
+        if (dist <= PLASMA_HIT_RADIUS) {
+          this.explodePlasma(p);
+          break;
+        }
+      }
+    }
+  }
+
+  private explodePlasma(plasma: PlasmaState): void {
+    plasma.alive = false;
+
+    const state = this.gameService.state;
+    const ships = state.ships;
+
+    for (let i = 0; i < ships.length; i++) {
+      const target = ships[i]!;
+      if (target.status !== ShipStatus.ALIVE) continue;
+
+      const dist = distance(plasma.x, plasma.y, target.x, target.y);
+      if (dist > PLASMA_SPLASH_RADIUS) continue;
+
+      const dmg = PLASMA_DAMAGE * (1 - dist / PLASMA_SPLASH_RADIUS);
+      if (dmg > 0) {
+        applyDamage(target, dmg);
+        target.lastDamagedBySlot = plasma.ownerSlot;
+      }
+    }
+
+    const expl = state.allocateExplosion();
+    if (expl) {
+      expl.alive = true;
+      expl.x = plasma.x;
+      expl.y = plasma.y;
+      expl.radius = 0;
+      expl.maxRadius = 800;
+      expl.ticksRemaining = 12;
     }
   }
 
@@ -1284,9 +1672,13 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
           ship.fuel += stats.fuelRecharge * 6;
         }
       }
+      if (ship.dockedAt >= 0) {
+        const dockedStats = SHIP_STATS[ship.shipType];
+        ship.fuel += dockedStats.fuelRecharge * (DOCK_FUEL_RECHARGE_MULT - 2);
+      }
       updateFuel(ship);
 
-      // Repair — apply orbit bonus
+      // Repair — orbit bonus is always +repair*4 in thousandths, independent of repair mode
       if (ship.orbitPlanetId >= 0) {
         const planet = planets[ship.orbitPlanetId];
         if (
@@ -1294,23 +1686,33 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
           planet.team === ship.team &&
           planet.features & PlanetFeature.REPAIR
         ) {
-          // Orbiting friendly repair planet: 4x rate (standard is 1x, add 3x more)
           const stats = SHIP_STATS[ship.shipType];
-          const repairMultiplier = ship.repairMode ? 2 : 1;
-          // Additional 3x on top of the standard 1x
+          const shieldGain =
+            (stats.shieldRepairRate * 4 * stats.maxShields) / 1000;
+          const hullGain = (stats.hullRepairRate * 4 * stats.maxHull) / 1000;
           if (ship.shieldStrength < stats.maxShields) {
             ship.shieldStrength = Math.min(
               stats.maxShields,
-              ship.shieldStrength +
-                stats.shieldRepairRate * repairMultiplier * 3,
+              ship.shieldStrength + shieldGain,
             );
           }
           if (!ship.shieldsUp && ship.hullDamage > 0) {
-            ship.hullDamage = Math.max(
-              0,
-              ship.hullDamage - stats.hullRepairRate * repairMultiplier * 3,
-            );
+            ship.hullDamage = Math.max(0, ship.hullDamage - hullGain);
           }
+        }
+      }
+      if (ship.dockedAt >= 0) {
+        const dockedStats = SHIP_STATS[ship.shipType];
+        const dockShieldGain =
+          (dockedStats.shieldRepairRate *
+            (DOCK_SHIELD_REPAIR_MULT - 2) *
+            dockedStats.maxShields) /
+          1000;
+        if (ship.shieldStrength < dockedStats.maxShields) {
+          ship.shieldStrength = Math.min(
+            dockedStats.maxShields,
+            ship.shieldStrength + dockShieldGain,
+          );
         }
       }
       updateRepair(ship);
@@ -1341,6 +1743,53 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
 
         // Ship dies
         ship.status = ShipStatus.EXPLODING;
+
+        // Force-undock all ships docked at this ship (if it's an SB)
+        for (let d = ship.dockedShips.length - 1; d >= 0; d--) {
+          const dockedSlot = ship.dockedShips[d]!;
+          const dockedShip = ships[dockedSlot]!;
+          if (dockedShip.dockedAt === ship.slotIndex) {
+            dockedShip.dockedAt = -1;
+          }
+        }
+        ship.dockedShips.length = 0;
+
+        // Also undock this ship if it was docked somewhere
+        if (ship.dockedAt >= 0) {
+          this.undock(ship);
+        }
+
+        if (ship.shipType === ShipType.SB) {
+          this.gameService.startSbCooldown(ship.team);
+        }
+        const armiesLost = ship.armies;
+        const killerSlot = ship.lastDamagedBySlot;
+        const killerShip = killerSlot >= 0 ? ships[killerSlot] : undefined;
+        this.eventEmitter.emit(GAME_KILL_EVENT, {
+          killerSlot: killerSlot,
+          killerName: killerShip?.playerId ?? "",
+          killerShipType: killerShip?.shipType ?? 0,
+          killerTeam: killerShip?.team ?? 0,
+          victimSlot: ship.slotIndex,
+          victimName: ship.playerId,
+          victimShipType: ship.shipType,
+          victimTeam: ship.team,
+          armiesLost,
+          tick: state.currentTick,
+        } satisfies KillEvent);
+        if (!ship.playerId.startsWith("bot:")) {
+          this.statReporter.recordDeath(ship.playerId);
+        }
+        if (
+          ship.lastDamagedBySlot >= 0 &&
+          ships[ship.lastDamagedBySlot] &&
+          !ships[ship.lastDamagedBySlot]!.playerId.startsWith("bot:")
+        ) {
+          this.statReporter.recordKill(ships[ship.lastDamagedBySlot]!.playerId);
+        }
+        if (ship.lastDamagedBySlot >= 0) {
+          this.gameService.recordSessionKill(ship.lastDamagedBySlot);
+        }
         ship.explodeTicks = EXPLOSION_DURATION_TICKS;
         ship.speed = 0;
         ship.desiredSpeed = 0;
@@ -1394,6 +1843,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
       ship.explodeTicks--;
       if (ship.explodeTicks <= 0) {
         ship.status = ShipStatus.DEAD;
+        ship.deathTick = state.currentTick;
       }
     }
 
@@ -1450,11 +1900,11 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
   // -------------------------------------------------------------------------
 
   private updateTMode(ships: ShipState[]): void {
-    // Count alive players per team
+    // Count all players per team (dead players still count — they'll respawn)
     const teamCounts = [0, 0, 0, 0];
     for (let i = 0; i < ships.length; i++) {
       const ship = ships[i]!;
-      if (ship.status === ShipStatus.DEAD || !ship.playerId) continue;
+      if (!ship.playerId) continue;
       teamCounts[ship.team] = (teamCounts[ship.team] ?? 0) + 1;
     }
 
@@ -1578,6 +2028,8 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     this.tmode = false;
     this.winningTeam = -1;
     this.surrenderTimers.fill(0);
+    this.gameService.sbCooldownExpiresTick[Team.FEDERATION] = 0;
+    this.gameService.sbCooldownExpiresTick[Team.ROMULANS] = 0;
     this.botManager.resetForNewGame();
     this.eventEmitter.emit(GAME_RESET_EVENT);
     this.logger.log("Game reset complete");

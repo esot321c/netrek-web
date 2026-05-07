@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { OnEvent } from "@nestjs/event-emitter";
+import { GameBroadcastService } from "../game-broadcast.service";
 import {
   Team,
   ShipType,
@@ -17,8 +18,7 @@ import { parseOrder } from "./bot-orders";
 import { GameState } from "../state/game-state";
 import { InputQueue } from "../state/input-queue";
 
-// This constant must match the value in game-loop.service.ts
-const GAME_TICK_EVENT = "game.tick";
+import { GAME_TICK_EVENT } from "../game-events";
 
 const SHIP_TYPES_FOR_BOTS: ShipType[] = [
   ShipType.SC,
@@ -53,7 +53,7 @@ export class BotManagerService {
   private tmode = false;
   private lastRebalanceTick = 0;
 
-  constructor() {
+  constructor(private readonly broadcastService: GameBroadcastService) {
     this.config = loadBotConfig();
   }
 
@@ -139,6 +139,8 @@ export class BotManagerService {
     );
 
     this.bots.set(slot, bot);
+    this.broadcastService.setBotName(slot, bot.name);
+    this.broadcastService.broadcastRoster();
 
     this.logger.debug(
       `Spawned bot ${name} (${BotDifficulty[difficulty]}) on team ${Team[team]}, slot ${slot}`,
@@ -153,6 +155,8 @@ export class BotManagerService {
 
     this.gameState.clearShip(slot);
     this.bots.delete(slot);
+    this.broadcastService.removeBotName(slot);
+    this.broadcastService.broadcastRoster();
 
     this.logger.debug(`Removed bot ${bot.name} from slot ${slot}`);
   }
@@ -312,6 +316,7 @@ export class BotManagerService {
         this.gameState.torps,
         this.gameState.phasers,
         this.gameState.explosions,
+        this.gameState.plasmas,
         this.alertStatuses,
         this.gameState.planets,
         this.tmode,

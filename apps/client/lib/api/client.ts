@@ -31,3 +31,22 @@ export async function apiFetch<T>(
 
   return res.json() as Promise<T>;
 }
+
+export async function joinServer(
+  serverId: string,
+  team: number,
+  shipType: number,
+): Promise<{ gameToken: string; wsUrl: string }> {
+  return apiFetch(`/servers/${serverId}/join`, {
+    method: "POST",
+    body: JSON.stringify({ team, shipType }),
+  });
+}
+
+export async function fetchServers() {
+  return apiFetch<any[]>("/servers");
+}
+
+export async function fetchServer(id: string) {
+  return apiFetch<any>(`/servers/${id}`);
+}

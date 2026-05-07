@@ -111,6 +111,16 @@ export function parseOrder(
     return null;
   }
 
+  // "take [planet]"
+  const takeMatch = lower.match(/^take\s+(.+)$/);
+  if (takeMatch) {
+    const planetId = findPlanetIndex(takeMatch[1]!.trim(), planetNames);
+    if (planetId !== -1) {
+      return { state: BotAIState.TAKE, targetId: planetId, targetName };
+    }
+    return null;
+  }
+
   // "regroup" or "fall back"
   if (lower === "regroup" || lower === "fall back") {
     return { state: BotAIState.PATROL, targetId: -1, targetName };
@@ -123,8 +133,10 @@ export function parseOrder(
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/** Returns the index of a planet by name (case-insensitive), or -1 if not found. */
+/** Returns the index of a planet by name (case-insensitive, prefix match). */
 function findPlanetIndex(name: string, planetNames: string[]): number {
   const lowerName = name.toLowerCase();
-  return planetNames.findIndex((p) => p.toLowerCase() === lowerName);
+  const exact = planetNames.findIndex((p) => p.toLowerCase() === lowerName);
+  if (exact !== -1) return exact;
+  return planetNames.findIndex((p) => p.toLowerCase().startsWith(lowerName));
 }

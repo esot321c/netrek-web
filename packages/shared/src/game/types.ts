@@ -48,6 +48,8 @@ export enum InputCommand {
   REFIT = 15,
   LOCK = 16,
   DETONATE_SELF = 17,
+  DOCK = 18,
+  FIRE_PLASMA = 19,
 }
 
 /** Lock target type for autopilot navigation */
@@ -100,6 +102,7 @@ export interface ShipStats {
   readonly explosionDamage: number;
   readonly maxWpnTemp: number;
   readonly maxEgnTemp: number;
+  readonly cloakFuelPerTick: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -174,12 +177,17 @@ export interface ShipState {
 
   // Explosion timer (while EXPLODING)
   explodeTicks: number;
+  deathTick: number;
 
   // Damage attribution — slot of last ship that dealt weapon damage (-1 = none/environment)
   lastDamagedBySlot: number;
 
   // Owning player
   playerId: string;
+
+  // Docking state
+  dockedAt: number; // SB slot index this ship is docked at (-1 = not docked)
+  dockedShips: number[]; // slot indices of ships docked at this SB (empty for non-SBs)
 }
 
 export interface TorpState {
@@ -212,6 +220,17 @@ export interface ExplosionState {
   y: number;
   radius: number;
   maxRadius: number;
+  ticksRemaining: number;
+}
+
+export interface PlasmaState {
+  alive: boolean;
+  ownerSlot: number;
+  team: Team;
+  x: number;
+  y: number;
+  direction: number; // 0-255
+  targetSlot: number; // -1 if lost tracking
   ticksRemaining: number;
 }
 
@@ -261,6 +280,7 @@ export interface ClientShip {
   tractorTarget: number; // slot of target (-1 = none)
   pressorTarget: number; // slot of target (-1 = none)
   alertStatus: AlertStatus;
+  docked: boolean;
 }
 
 export interface ClientTorp {
@@ -282,6 +302,13 @@ export interface ClientExplosion {
   x: number;
   y: number;
   radius: number;
+}
+
+export interface ClientPlasma {
+  x: number;
+  y: number;
+  ownerSlot: number;
+  team: Team;
 }
 
 export interface ClientPlanet {
@@ -308,6 +335,7 @@ export interface ClientSelfExtra {
   lockType: number; // LockType enum value
   lockTargetId: number; // planet index or player slot (-1 when NONE)
   tmode: boolean;
+  surrenderTimer: number;
 }
 
 export interface ClientGameState {
@@ -317,6 +345,7 @@ export interface ClientGameState {
   torps: ClientTorp[];
   phasers: ClientPhaser[];
   explosions: ClientExplosion[];
+  plasmas: ClientPlasma[];
   planets: ClientPlanet[];
   self: ClientSelfExtra;
 }

@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@netrek/ui/dropdown-menu";
-import { LogOut, Settings } from "lucide-react";
+import { LogOut, Settings, User2Icon } from "lucide-react";
 
 export function UserMenu() {
   const { user, loading, logout } = useAuth();
@@ -55,6 +55,12 @@ export function UserMenu() {
           </div>
         </div>
         <DropdownMenuSeparator />
+        <Link href="/profile">
+          <DropdownMenuItem>
+            <User2Icon className="mr-1 h-4 w-4" />
+            Profile
+          </DropdownMenuItem>
+        </Link>
         <Link href="/settings">
           <DropdownMenuItem>
             <Settings className="mr-1 h-4 w-4" />

@@ -3,6 +3,7 @@ import {
   MAX_TORPS,
   MAX_PHASERS,
   MAX_EXPLOSIONS,
+  MAX_PLASMAS,
   SHIP_STATS,
   PLANET_DEFS,
   randomizePlanetFeatures,
@@ -10,6 +11,7 @@ import {
   type TorpState,
   type PhaserState,
   type ExplosionState,
+  type PlasmaState,
   type PlanetState,
   ShipType,
   ShipStatus,
@@ -60,8 +62,11 @@ function createShip(slotIndex: number): ShipState {
     lockType: LockType.NONE,
     lockTargetId: -1,
     explodeTicks: 0,
+    deathTick: 0,
     lastDamagedBySlot: -1,
     playerId: "",
+    dockedAt: -1,
+    dockedShips: [],
   };
 }
 
@@ -104,11 +109,25 @@ function createExplosion(): ExplosionState {
   };
 }
 
+function createPlasma(): PlasmaState {
+  return {
+    alive: false,
+    ownerSlot: 0,
+    team: Team.FEDERATION,
+    x: 0,
+    y: 0,
+    direction: 0,
+    targetSlot: -1,
+    ticksRemaining: 0,
+  };
+}
+
 export class GameState {
   readonly ships: ShipState[];
   readonly torps: TorpState[];
   readonly phasers: PhaserState[];
   readonly explosions: ExplosionState[];
+  readonly plasmas: PlasmaState[];
   readonly planets: PlanetState[];
   currentTick = 0;
 
@@ -119,6 +138,7 @@ export class GameState {
     this.explosions = Array.from({ length: MAX_EXPLOSIONS }, () =>
       createExplosion(),
     );
+    this.plasmas = Array.from({ length: MAX_PLASMAS }, () => createPlasma());
     this.planets = PLANET_DEFS.map((def, i) => ({
       planetId: i,
       x: def.x,
@@ -201,7 +221,10 @@ export class GameState {
     ship.lockType = LockType.NONE;
     ship.lockTargetId = -1;
     ship.explodeTicks = 0;
+    ship.deathTick = 0;
     ship.lastDamagedBySlot = -1;
+    ship.dockedAt = -1;
+    ship.dockedShips = [];
   }
 
   /** Clear a ship slot (player left). */
@@ -254,6 +277,14 @@ export class GameState {
     return null;
   }
 
+  /** Allocate a plasma from the pool. */
+  allocatePlasma(): PlasmaState | null {
+    for (let i = 0; i < this.plasmas.length; i++) {
+      if (!this.plasmas[i]!.alive) return this.plasmas[i]!;
+    }
+    return null;
+  }
+
   /** Reset all game state for a new game. */
   resetGame(): void {
     for (let i = 0; i < this.ships.length; i++) {
@@ -267,6 +298,9 @@ export class GameState {
     }
     for (let i = 0; i < this.explosions.length; i++) {
       this.explosions[i]!.alive = false;
+    }
+    for (let i = 0; i < this.plasmas.length; i++) {
+      this.plasmas[i]!.alive = false;
     }
 
     for (let i = 0; i < PLANET_DEFS.length && i < this.planets.length; i++) {
