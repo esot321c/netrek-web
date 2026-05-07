@@ -51,6 +51,10 @@ import {
   SURRENDER_FREEZE_PLANETS,
   SURRENDER_CLEAR_PLANETS,
   SURRENDER_TIMER_TICKS,
+  MAX_DOCK_SHIPS,
+  DOCK_DIST,
+  DOCK_SHIELD_REPAIR_MULT,
+  DOCK_FUEL_RECHARGE_MULT,
   PlanetFeature,
   ShipStatus,
   ShipType,
@@ -180,6 +184,9 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     // Step 1b: Update lock steering (before movement so desiredDirection is set)
     this.updateLock(state.ships, state.planets);
 
+    // Step 1c: Update docking (sync positions, force-undock on SB death)
+    this.updateDocking(state.ships);
+
     // Step 2: Update movement (orbiting ships don't move)
     this.updateMovement(state.ships);
 
@@ -258,6 +265,19 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
       const { inputs, count } = inputQueue.drain(slot);
       for (let i = 0; i < count; i++) {
         const input = inputs[i]!;
+
+        if (ship.dockedAt >= 0) {
+          if (
+            input.command === InputCommand.SET_SPEED ||
+            input.command === InputCommand.SET_DIRECTION ||
+            input.command === InputCommand.FIRE_TORP ||
+            input.command === InputCommand.FIRE_PHASER ||
+            input.command === InputCommand.FIRE_PLASMA
+          ) {
+            this.undock(ship);
+          }
+        }
+
         switch (input.command) {
           case InputCommand.SET_DIRECTION:
             ship.desiredDirection = input.value & 0xff;
@@ -348,6 +368,10 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
 
           case InputCommand.DETONATE_SELF:
             this.detonateSelf(ship);
+            break;
+
+          case InputCommand.DOCK:
+            this.toggleDock(ship);
             break;
         }
       }
@@ -446,6 +470,49 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private toggleDock(ship: ShipState): void {
+    if (ship.dockedAt >= 0) {
+      this.undock(ship);
+      return;
+    }
+    if (ship.shipType === ShipType.SB) return;
+    const ships = this.gameService.state.ships;
+    for (let i = 0; i < ships.length; i++) {
+      const sb = ships[i]!;
+      if (sb.status !== ShipStatus.ALIVE) continue;
+      if (sb.shipType !== ShipType.SB) continue;
+      if (sb.team !== ship.team) continue;
+      if (sb.dockedShips.length >= MAX_DOCK_SHIPS) continue;
+      const dist = distance(ship.x, ship.y, sb.x, sb.y);
+      if (dist <= DOCK_DIST) {
+        this.dock(ship, sb);
+        return;
+      }
+    }
+  }
+
+  private dock(ship: ShipState, sb: ShipState): void {
+    ship.dockedAt = sb.slotIndex;
+    sb.dockedShips.push(ship.slotIndex);
+    ship.speed = 0;
+    ship.desiredSpeed = 0;
+    ship.tractorTarget = -1;
+    ship.pressorTarget = -1;
+    if (ship.orbitPlanetId >= 0) {
+      this.breakOrbit(ship);
+    }
+  }
+
+  private undock(ship: ShipState): void {
+    const sbSlot = ship.dockedAt;
+    ship.dockedAt = -1;
+    if (sbSlot >= 0) {
+      const sb = this.gameService.state.ships[sbSlot]!;
+      const idx = sb.dockedShips.indexOf(ship.slotIndex);
+      if (idx >= 0) sb.dockedShips.splice(idx, 1);
+    }
+  }
+
   /** Each tick: steer locked ships toward their target, auto-orbit planets on arrival. */
   private updateLock(ships: ShipState[], planets: PlanetState[]): void {
     for (let i = 0; i < ships.length; i++) {
@@ -478,7 +545,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
         );
       } else if (ship.lockType === LockType.PLAYER) {
         const target = ships[ship.lockTargetId];
-        if (!target || target.status !== ShipStatus.ALIVE) {
+        if (!target || target.status !== ShipStatus.ALIVE || target.cloaked) {
           this.clearLock(ship);
           continue;
         }
@@ -491,6 +558,26 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
           target.y,
         );
       }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Docking (sync positions, force-undock on SB death)
+  // -------------------------------------------------------------------------
+
+  private updateDocking(ships: ShipState[]): void {
+    for (let i = 0; i < ships.length; i++) {
+      const ship = ships[i]!;
+      if (ship.dockedAt < 0) continue;
+      const sb = ships[ship.dockedAt]!;
+      if (sb.status !== ShipStatus.ALIVE) {
+        this.undock(ship);
+        continue;
+      }
+      ship.x = sb.x;
+      ship.y = sb.y;
+      ship.speed = 0;
+      ship.desiredSpeed = 0;
     }
   }
 
@@ -1323,6 +1410,10 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
           ship.fuel += stats.fuelRecharge * 6;
         }
       }
+      if (ship.dockedAt >= 0) {
+        const dockedStats = SHIP_STATS[ship.shipType];
+        ship.fuel += dockedStats.fuelRecharge * (DOCK_FUEL_RECHARGE_MULT - 2);
+      }
       updateFuel(ship);
 
       // Repair — orbit bonus is always +repair*4 in thousandths, independent of repair mode
@@ -1346,6 +1437,20 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
           if (!ship.shieldsUp && ship.hullDamage > 0) {
             ship.hullDamage = Math.max(0, ship.hullDamage - hullGain);
           }
+        }
+      }
+      if (ship.dockedAt >= 0) {
+        const dockedStats = SHIP_STATS[ship.shipType];
+        const dockShieldGain =
+          (dockedStats.shieldRepairRate *
+            (DOCK_SHIELD_REPAIR_MULT - 2) *
+            dockedStats.maxShields) /
+          1000;
+        if (ship.shieldStrength < dockedStats.maxShields) {
+          ship.shieldStrength = Math.min(
+            dockedStats.maxShields,
+            ship.shieldStrength + dockShieldGain,
+          );
         }
       }
       updateRepair(ship);
@@ -1376,6 +1481,22 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
 
         // Ship dies
         ship.status = ShipStatus.EXPLODING;
+
+        // Force-undock all ships docked at this ship (if it's an SB)
+        for (let d = ship.dockedShips.length - 1; d >= 0; d--) {
+          const dockedSlot = ship.dockedShips[d]!;
+          const dockedShip = ships[dockedSlot]!;
+          if (dockedShip.dockedAt === ship.slotIndex) {
+            dockedShip.dockedAt = -1;
+          }
+        }
+        ship.dockedShips.length = 0;
+
+        // Also undock this ship if it was docked somewhere
+        if (ship.dockedAt >= 0) {
+          this.undock(ship);
+        }
+
         if (ship.shipType === ShipType.SB) {
           this.gameService.startSbCooldown(ship.team);
         }
