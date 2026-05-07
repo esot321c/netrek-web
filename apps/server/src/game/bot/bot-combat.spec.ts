@@ -46,6 +46,7 @@ function makeShip(overrides: Partial<ClientShip> = {}): ClientShip {
     tractorTarget: -1,
     pressorTarget: -1,
     alertStatus: AlertStatus.GREEN,
+    docked: false,
     ...overrides,
   };
 }
