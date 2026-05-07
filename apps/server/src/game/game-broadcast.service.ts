@@ -7,13 +7,13 @@ import {
   type RosterMap,
   type KillEvent,
 } from "@netrek/shared";
+import type { AlertStatus } from "@netrek/shared";
 import { GameService } from "./game.service";
 import {
-  GameLoopService,
   GAME_TICK_EVENT,
   GAME_WIN_EVENT,
   GAME_KILL_EVENT,
-} from "./game-loop.service";
+} from "./game-events";
 
 interface ConnectedPlayer {
   socket: Socket;
@@ -29,10 +29,7 @@ export class GameBroadcastService {
   private readonly players = new Map<string, ConnectedPlayer>();
   private readonly botNames = new Map<number, string>();
 
-  constructor(
-    private readonly gameService: GameService,
-    private readonly gameLoopService: GameLoopService,
-  ) {}
+  constructor(private readonly gameService: GameService) {}
 
   setServer(server: Server): void {
     this.server = server;
@@ -159,7 +156,7 @@ export class GameBroadcastService {
   }
 
   @OnEvent(GAME_TICK_EVENT)
-  handleTick(): void {
+  handleTick(data: { alertStatuses: AlertStatus[]; tmode: boolean }): void {
     if (this.players.size === 0) return;
 
     const state = this.gameService.state;
@@ -174,9 +171,9 @@ export class GameBroadcastService {
         state.torps,
         state.phasers,
         state.explosions,
-        this.gameLoopService.alertStatuses,
+        data.alertStatuses,
         state.planets,
-        this.gameLoopService.tmode,
+        data.tmode,
       );
 
       player.socket.volatile.emit("state", buf);

@@ -18,8 +18,7 @@ import { parseOrder } from "./bot-orders";
 import { GameState } from "../state/game-state";
 import { InputQueue } from "../state/input-queue";
 
-// This constant must match the value in game-loop.service.ts
-const GAME_TICK_EVENT = "game.tick";
+import { GAME_TICK_EVENT } from "../game-events";
 
 const SHIP_TYPES_FOR_BOTS: ShipType[] = [
   ShipType.SC,

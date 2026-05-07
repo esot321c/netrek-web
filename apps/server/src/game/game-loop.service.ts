@@ -85,10 +85,18 @@ import { GameService } from "./game.service";
 import { BotManagerService } from "./bot";
 import { loadBotConfig, type BotConfig } from "./bot/bot-config";
 
-export const GAME_TICK_EVENT = "game.tick";
-export const GAME_WIN_EVENT = "game.win";
-export const GAME_RESET_EVENT = "game.reset";
-export const GAME_KILL_EVENT = "game.kill";
+import {
+  GAME_TICK_EVENT,
+  GAME_WIN_EVENT,
+  GAME_RESET_EVENT,
+  GAME_KILL_EVENT,
+} from "./game-events";
+export {
+  GAME_TICK_EVENT,
+  GAME_WIN_EVENT,
+  GAME_RESET_EVENT,
+  GAME_KILL_EVENT,
+} from "./game-events";
 
 @Injectable()
 export class GameLoopService implements OnModuleInit, OnModuleDestroy {
@@ -156,7 +164,10 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
         this.resetGame();
       }
       state.currentTick++;
-      this.eventEmitter.emit(GAME_TICK_EVENT);
+      this.eventEmitter.emit(GAME_TICK_EVENT, {
+        alertStatuses: this.alertStatuses,
+        tmode: this.tmode,
+      });
       this.botManager.setTMode(this.tmode);
       return;
     }
@@ -216,7 +227,10 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     state.currentTick++;
 
     // Emit tick event for broadcast
-    this.eventEmitter.emit(GAME_TICK_EVENT);
+    this.eventEmitter.emit(GAME_TICK_EVENT, {
+      alertStatuses: this.alertStatuses,
+      tmode: this.tmode,
+    });
 
     this.botManager.setTMode(this.tmode);
   }
