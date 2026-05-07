@@ -15,6 +15,8 @@ export interface RosterEntry {
   name: string;
   team: number;
   shipType: number;
+  kills: number;
+  rank: number;
 }
 
 export type RosterMap = Record<number, RosterEntry>;
