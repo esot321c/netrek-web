@@ -17,7 +17,7 @@ import {
   type ChatMessage,
 } from "@netrek/shared";
 import { WsAuthService, GameTokenPayload } from "./guards/ws-auth.guard";
-import { GameService } from "./game.service";
+import { GameService, RespawnResult } from "./game.service";
 import { GameBroadcastService } from "./game-broadcast.service";
 import { BotManagerService } from "./bot";
 import { ServerConfig } from "../config/server.config";
@@ -87,6 +87,13 @@ export class GameGateway
     client.data["slot"] = slot;
     client.data["payload"] = payload;
 
+    this.gameService.setPlayerTokenStats(slot, {
+      totalKills: payload.stats?.totalKills ?? 0,
+      planetsTaken: payload.stats?.planetsTaken ?? 0,
+      armiesBombed: payload.stats?.armiesBombed ?? 0,
+      rank: payload.stats?.rank ?? 0,
+    });
+
     this.broadcastService.addPlayer(
       client.id,
       client,
@@ -108,6 +115,7 @@ export class GameGateway
     if (player) {
       const team = this.gameService.state.ships[player.slot]?.team;
       this.gameService.leaveGame(player.slot);
+      this.gameService.clearPlayerStats(player.slot);
       if (team !== undefined) {
         this.botManager.onHumanLeave(team);
       }
@@ -145,7 +153,7 @@ export class GameGateway
   handleRespawn(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { shipType: number },
-  ): { ok: boolean } {
+  ): RespawnResult {
     const player = this.broadcastService.getPlayerBySocketId(client.id);
     if (!player) return { ok: false };
 
@@ -153,8 +161,7 @@ export class GameGateway
       return { ok: false };
     }
 
-    this.gameService.respawn(player.slot, data.shipType as ShipType);
-    return { ok: true };
+    return this.gameService.respawn(player.slot, data.shipType as ShipType);
   }
 
   @SubscribeMessage("chat")
