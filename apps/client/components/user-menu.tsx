@@ -14,13 +14,20 @@ import {
 import { LogOut, Settings, User2Icon } from "lucide-react";
 
 export function UserMenu() {
-  const { user, loading, logout } = useAuth();
+  const { user, isGuest, loading, logout } = useAuth();
 
   if (loading) {
     return <div className="h-8 w-8 animate-pulse rounded-full bg-muted" />;
   }
 
   if (!user) {
+    if (isGuest) {
+      return (
+        <Button variant="outline" size="sm" onClick={logout}>
+          Guest (Sign in)
+        </Button>
+      );
+    }
     return (
       <Link href="/auth/signin">
         <Button variant="outline" size="sm">

@@ -29,6 +29,12 @@ export default function LobbyPage() {
   }, [user, isGuest, loading, router]);
 
   useEffect(() => {
+    if (user && !user.usernameSet) {
+      router.replace("/auth/setup");
+    }
+  }, [user, router]);
+
+  useEffect(() => {
     if (!user && !isGuest) return;
 
     const load = async () => {

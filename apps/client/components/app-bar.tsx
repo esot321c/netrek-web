@@ -11,7 +11,7 @@ const navItems = [{ label: "Lobby", href: "/" }];
 
 export function AppBar() {
   const pathname = usePathname();
-  const { user } = useAuth();
+  const { user, isGuest } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   // Hide AppBar on full-screen game route
@@ -25,7 +25,7 @@ export function AppBar() {
           Netrek
         </Link>
 
-        {user && (
+        {(user || isGuest) && (
           <nav className="hidden items-center gap-1 md:flex">
             {navItems.map((item) => (
               <Link
@@ -47,7 +47,7 @@ export function AppBar() {
           <div className="hidden md:block">
             <UserMenu />
           </div>
-          {user && (
+          {(user || isGuest) && (
             <button
               className="rounded-md p-2 text-muted-foreground hover:text-foreground md:hidden"
               onClick={() => setMobileOpen(!mobileOpen)}
@@ -63,7 +63,7 @@ export function AppBar() {
       </div>
 
       {/* Mobile menu */}
-      {mobileOpen && user && (
+      {mobileOpen && (user || isGuest) && (
         <div className="border-t bg-background px-4 py-4 md:hidden">
           <nav className="space-y-1">
             {navItems.map((item) => (
