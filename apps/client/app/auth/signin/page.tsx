@@ -22,16 +22,13 @@ export default function SignInPage() {
         <div className="flex flex-col items-center space-y-2 text-center">
           <Server className="h-8 w-8" />
           <h1>Welcome to Netrek</h1>
-          <p className="text-sm text-muted-foreground">Sign in to play</p>
+          <p className="text-sm text-muted-foreground">Play Now</p>
         </div>
 
         <div className="space-y-3">
-          <a href={`${API_URL}/auth/google`}>
-            <Button variant="outline" className="w-full gap-2">
-              <GoogleIcon />
-              Sign in with Google
-            </Button>
-          </a>
+          <Button className="w-full" onClick={handleGuestPlay}>
+            Play as Guest
+          </Button>
 
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
@@ -44,13 +41,12 @@ export default function SignInPage() {
             </div>
           </div>
 
-          <Button
-            variant="ghost"
-            className="w-full text-muted-foreground"
-            onClick={handleGuestPlay}
-          >
-            Play as Guest
-          </Button>
+          <a href={`${API_URL}/auth/google`}>
+            <Button variant="outline" className="w-full gap-2">
+              <GoogleIcon />
+              Sign in with Google
+            </Button>
+          </a>
         </div>
 
         <p className="text-center text-xs text-muted-foreground">
