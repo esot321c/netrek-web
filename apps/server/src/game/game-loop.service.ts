@@ -256,6 +256,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     this.eventEmitter.emit(GAME_TICK_EVENT, {
       alertStatuses: this.alertStatuses,
       tmode: this.tmode,
+      surrenderTimers: this.surrenderTimers,
     });
 
     this.botManager.setTMode(this.tmode);
