@@ -96,7 +96,8 @@ export default function GameDetailPage({
     setJoining(true);
     setJoinError(null);
     try {
-      const result = isGuest
+      const actuallyGuest = isGuest && !user;
+      const result = actuallyGuest
         ? await joinGuestServer(id, selectedTeam, selectedShip)
         : await joinServer(id, selectedTeam, selectedShip);
       sessionStorage.setItem(

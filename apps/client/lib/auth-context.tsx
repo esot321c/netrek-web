@@ -50,7 +50,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     api<AuthUser>("/auth/me")
-      .then(setUser)
+      .then((data) => {
+        setUser(data);
+        setIsGuest(false);
+        sessionStorage.removeItem("guest");
+      })
       .catch(() => setUser(null))
       .finally(() => setLoading(false));
   }, []);

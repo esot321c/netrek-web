@@ -45,3 +45,5 @@ generated/
 *.pem
 
 .claude/
+
+.playwrite-mcp/
