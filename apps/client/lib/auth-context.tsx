@@ -33,7 +33,10 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [isGuest, setIsGuest] = useState(false);
+  const [isGuest, setIsGuest] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return sessionStorage.getItem("guest") === "1";
+  });
   const [loading, setLoading] = useState(true);
 
   const refreshUser = useCallback(async () => {
@@ -55,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     if (isGuest) {
       setIsGuest(false);
+      sessionStorage.removeItem("guest");
       return;
     }
     try {
@@ -66,6 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginAsGuest = useCallback(() => {
     setIsGuest(true);
+    sessionStorage.setItem("guest", "1");
     setLoading(false);
   }, []);
 

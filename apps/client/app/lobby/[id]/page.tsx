@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { apiFetch, joinServer, joinGuestServer } from "@/lib/api/client";
@@ -123,17 +124,17 @@ export default function GameDetailPage({
     <div className="min-h-screen bg-gray-900 text-gray-300">
       <div className="mx-auto max-w-3xl px-4 py-10">
         {/* Back link */}
-        <a
+        <Link
           href="/lobby"
           className="text-sm text-gray-500 hover:text-yellow-500 transition-colors"
         >
           &larr; Back to Server Browser
-        </a>
+        </Link>
 
         {/* Stats badge */}
         {user && (
           <div className="mt-4">
-            <StatsBadge username={user.name} />
+            <StatsBadge username={user.username || user.name} />
           </div>
         )}
 

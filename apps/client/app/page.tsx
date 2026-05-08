@@ -18,23 +18,12 @@ export default function HomePage() {
           capture-the-flag with armies.
         </p>
         <div className="mt-8">
-          {loading ? (
-            <span className="text-gray-500">Loading...</span>
-          ) : user ? (
-            <Link
-              href="/lobby"
-              className="inline-block rounded bg-yellow-500 px-8 py-3 text-lg font-semibold text-gray-900 hover:bg-yellow-400 transition-colors"
-            >
-              Enter Lobby
-            </Link>
-          ) : (
-            <Link
-              href="/auth/signin"
-              className="inline-block rounded bg-yellow-500 px-8 py-3 text-lg font-semibold text-gray-900 hover:bg-yellow-400 transition-colors"
-            >
-              Sign In to Play
-            </Link>
-          )}
+          <Link
+            href="/lobby"
+            className="inline-block rounded bg-yellow-500 px-8 py-3 text-lg font-semibold text-gray-900 hover:bg-yellow-400 transition-colors"
+          >
+            Play Now
+          </Link>
         </div>
       </section>
 

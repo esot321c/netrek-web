@@ -29,7 +29,8 @@ export async function apiFetch<T>(
     throw new Error(body || `API error ${res.status}`);
   }
 
-  return res.json() as Promise<T>;
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 export async function joinServer(

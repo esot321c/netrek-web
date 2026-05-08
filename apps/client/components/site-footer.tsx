@@ -9,7 +9,7 @@ export function SiteFooter() {
   if (pathname.startsWith("/game")) return null;
 
   return (
-    <footer className="border-t">
+    <footer className="border-t bg-gray-950">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-6">
         <p className="text-sm text-muted-foreground">
           &copy; {new Date().getFullYear()} Netrek

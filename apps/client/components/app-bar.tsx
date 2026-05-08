@@ -7,7 +7,7 @@ import { UserMenu } from "./user-menu";
 import { useAuth } from "@/lib/auth-context";
 import { Crosshair, Menu, X } from "lucide-react";
 
-const navItems = [{ label: "Lobby", href: "/" }];
+const navItems = [{ label: "Lobby", href: "/lobby" }];
 
 export function AppBar() {
   const pathname = usePathname();
@@ -18,7 +18,7 @@ export function AppBar() {
   if (pathname.startsWith("/game")) return null;
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
+    <header className="sticky top-0 z-50 w-full border-b bg-gray-950">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
         <Link href="/" className="flex items-center gap-2 font-semibold">
           <Crosshair className="h-5 w-5" />

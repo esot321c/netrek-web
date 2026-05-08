@@ -54,8 +54,8 @@ export default function LobbyPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-900">
-        <p className="text-gray-500">Loading...</p>
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-muted-foreground">Loading...</p>
       </div>
     );
   }
@@ -63,21 +63,19 @@ export default function LobbyPage() {
   if (!user && !isGuest) return null;
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-300">
+    <div className="min-h-screen">
       <div className="mx-auto max-w-5xl px-4 py-10">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-yellow-500">
-              Server Browser
-            </h1>
-            <p className="text-gray-500 mt-1">
+            <h1 className="text-3xl font-bold text-primary">Server Browser</h1>
+            <p className="text-muted-foreground mt-1">
               Select a server to join. Refreshes every 5 seconds.
             </p>
           </div>
           {user && (
             <Link
               href="/settings/servers"
-              className="rounded border border-yellow-600 px-4 py-2 text-sm text-yellow-500 hover:bg-yellow-600 hover:text-gray-900 transition-colors"
+              className="rounded border border-primary px-4 py-2 text-sm text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
             >
               Host a Server
             </Link>
@@ -85,19 +83,16 @@ export default function LobbyPage() {
         </div>
 
         {fetchError && (
-          <div className="mb-6 rounded border border-red-700 bg-red-900/30 px-4 py-3 text-sm text-red-400">
+          <div className="mb-6 rounded border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             Failed to load servers: {fetchError}
           </div>
         )}
 
         {servers.length === 0 && !fetchError ? (
-          <div className="rounded border border-gray-700 bg-gray-800 px-6 py-12 text-center text-gray-500">
+          <div className="rounded border border-border bg-card px-6 py-12 text-center text-muted-foreground">
             No servers online right now.{" "}
             {user && (
-              <Link
-                href="/settings/servers"
-                className="text-yellow-500 underline"
-              >
+              <Link href="/settings/servers" className="text-primary underline">
                 Host one?
               </Link>
             )}
@@ -108,36 +103,36 @@ export default function LobbyPage() {
               <Link
                 key={server.id}
                 href={`/lobby/${server.id}`}
-                className="flex items-center gap-4 rounded border border-gray-700 bg-gray-800 px-5 py-4 hover:border-yellow-600 hover:bg-gray-750 transition-colors"
+                className="flex items-center gap-4 rounded border border-border bg-card px-5 py-4 hover:border-primary transition-colors"
               >
                 {/* Name + badge */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-gray-100 truncate">
+                    <span className="font-semibold text-foreground truncate">
                       {server.name}
                     </span>
                     {server.isOfficial ? (
-                      <span className="shrink-0 rounded bg-yellow-500 px-1.5 py-0.5 text-xs font-bold text-gray-900">
+                      <span className="shrink-0 rounded bg-primary px-1.5 py-0.5 text-xs font-bold text-primary-foreground">
                         OFFICIAL
                       </span>
                     ) : (
-                      <span className="shrink-0 rounded bg-gray-700 px-1.5 py-0.5 text-xs text-gray-400">
+                      <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-xs text-muted-foreground">
                         COMMUNITY
                       </span>
                     )}
                   </div>
-                  <div className="text-sm text-gray-500 mt-0.5">
+                  <div className="text-sm text-muted-foreground mt-0.5">
                     {server.region}
                   </div>
                 </div>
 
                 {/* Phase */}
-                <div className="text-sm text-gray-400 shrink-0">
+                <div className="text-sm text-muted-foreground shrink-0">
                   <span
                     className={
                       server.gamePhase === "active"
                         ? "text-green-400"
-                        : "text-gray-500"
+                        : "text-muted-foreground"
                     }
                   >
                     {server.gamePhase}
@@ -149,17 +144,17 @@ export default function LobbyPage() {
                   <span
                     className={
                       server.playerCount >= server.maxPlayers
-                        ? "text-red-400"
-                        : "text-gray-300"
+                        ? "text-destructive"
+                        : "text-foreground"
                     }
                   >
                     {server.playerCount}/{server.maxPlayers}
                   </span>
-                  <span className="text-gray-600 ml-1">players</span>
+                  <span className="text-muted-foreground ml-1">players</span>
                 </div>
 
                 {/* Arrow */}
-                <div className="text-yellow-600 shrink-0">&#8250;</div>
+                <div className="text-primary/80 shrink-0">&#8250;</div>
               </Link>
             ))}
           </div>
