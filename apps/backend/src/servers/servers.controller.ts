@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import {
   Controller,
   Get,
@@ -118,6 +119,40 @@ export class ServersController {
       team: dto.team,
       shipType: dto.shipType,
       stats,
+    });
+
+    return { gameToken, wsUrl: server.host };
+  }
+
+  @Post(":id/join-guest")
+  async joinGuest(@Param("id") id: string, @Body() dto: JoinServerDto) {
+    const server = await this.serversService.findById(id);
+    if (server.status !== "online") {
+      throw new BadRequestException("Server is offline");
+    }
+    if (server.playerCount >= server.maxPlayers) {
+      throw new BadRequestException("Server is full");
+    }
+
+    const guestNumber = Math.floor(Math.random() * 9000) + 1000;
+    const gameToken = await this.gameTokenService.signGameToken({
+      sub: `guest:${randomUUID()}`,
+      username: `Guest-${guestNumber}`,
+      serverId: id,
+      team: dto.team,
+      shipType: dto.shipType,
+      isGuest: true,
+      stats: {
+        totalKills: 0,
+        totalDeaths: 0,
+        totalWins: 0,
+        totalLosses: 0,
+        planetsTaken: 0,
+        armiesBombed: 0,
+        armiesBeamed: 0,
+        secondsPlayed: 0,
+        rank: 0,
+      },
     });
 
     return { gameToken, wsUrl: server.host };
