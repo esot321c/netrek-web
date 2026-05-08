@@ -1,12 +1,15 @@
-# Guest Play — Design Spec
+# Guest Play & Username Management — Design Spec
 
 ## Summary
 
-Add a "Play as Guest" option so players can join games without Google login. Guests are fully ephemeral — no database record, no persistent stats, no match history. They get an auto-generated username like "Guest-4821" and disappear when they disconnect.
+Two related features:
+
+1. **Guest play** — "Play as Guest" option so players can join games without Google login. Fully ephemeral — no database record, no persistent stats. Auto-generated username like "Guest-4821", gone when they disconnect.
+2. **Username management** — First-login username selection (pre-populated from Google, editable) and a `/settings` page to change username later.
 
 ## Motivation
 
-Lower the barrier to entry. New players should be able to try the game immediately without creating an account. If they like it, they can sign in with Google later for persistent stats and rank progression.
+Lower the barrier to entry. New players should be able to try the game immediately without creating an account. For players who do sign in, let them pick a username they actually want instead of being stuck with their email prefix.
 
 ## Design
 
@@ -26,7 +29,34 @@ Lower the barrier to entry. New players should be able to try the game immediate
 
 **Validation:** Same server checks as regular join — server must be online and not full.
 
-**No changes to:** Auth controller, auth service, JWT sessions, user model, database schema.
+**No changes to:** JWT sessions, core auth service OAuth flow.
+
+### Username Management — Backend
+
+**Username validation rules:**
+
+- Length: 2-20 characters
+- Allowed characters: alphanumeric, hyphens, underscores (`/^[a-zA-Z0-9_-]+$/`)
+- Must be unique (case-insensitive check)
+- Cannot start with "Guest-" (reserved for guest players)
+
+**New endpoint:** `PATCH /auth/username`
+
+- Requires JwtAuthGuard
+- Request body: `{ username: string }`
+- Validates username against rules above
+- Updates the user's username in the database
+- Returns the updated user profile (same shape as `/auth/me`)
+- Returns 409 if username is taken
+
+**First-login flow change:**
+
+- Add `usernameSet` boolean to the User model (defaults to `false`)
+- When a new user is created via OAuth, `usernameSet` is `false` — username is auto-generated from email prefix as before
+- The `/auth/me` response includes `usernameSet` so the client knows to show the setup form
+- After the user confirms/changes their username via `PATCH /auth/username`, set `usernameSet = true`
+
+**Database migration:** Add `usernameSet Boolean @default(false)` to the User table. The migration backfills all existing users to `usernameSet = true` (they've already been playing with their current username). Only genuinely new signups get `false`.
 
 ### Game Token Payload
 
@@ -67,6 +97,30 @@ interface GameTokenPayload {
 
 **Game page:** No changes. The game token works identically.
 
+### Username Management — Client
+
+**Auth context changes:**
+
+- Add `username` field to the `AuthUser` interface (currently missing — backend already returns it)
+- Add `usernameSet` field to `AuthUser`
+
+**First-login username form:**
+
+- After OAuth redirect, if `usernameSet` is false, redirect to `/auth/setup`
+- `/auth/setup` page shows a simple form: one text input pre-populated with the auto-generated username (email prefix), a "Confirm" button
+- On submit, calls `PATCH /auth/username` with the chosen username
+- On success, navigates to the lobby
+- On 409 (taken), shows inline error "Username already taken"
+- Validation feedback shown inline as the user types (length, allowed characters)
+
+**Settings page (`/settings`):**
+
+- New page at `/settings` (requires auth, redirects to signin if not logged in)
+- Shows current username in an editable text input
+- "Save" button calls `PATCH /auth/username`
+- Same validation and error handling as the setup form
+- Success shows a brief confirmation (e.g., toast or inline "Saved")
+
 ### What Guests Don't Get
 
 - Persistent stats or rank progression
@@ -90,3 +144,5 @@ interface GameTokenPayload {
 - Guest-to-account conversion/upgrade flow (future feature)
 - Guest restrictions on specific servers
 - Guest visual indicators on scoreboard (they just look like any player)
+- Avatar upload or other profile settings (just username for now)
+- Username change cooldowns or history tracking
