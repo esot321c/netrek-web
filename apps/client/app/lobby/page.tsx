@@ -17,19 +17,19 @@ interface ServerListing {
 }
 
 export default function LobbyPage() {
-  const { user, loading } = useAuth();
+  const { user, isGuest, loading } = useAuth();
   const router = useRouter();
   const [servers, setServers] = useState<ServerListing[]>([]);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!loading && !user && !isGuest) {
       router.replace("/auth/signin");
     }
-  }, [user, loading, router]);
+  }, [user, isGuest, loading, router]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user && !isGuest) return;
 
     const load = async () => {
       try {
@@ -44,7 +44,7 @@ export default function LobbyPage() {
     load();
     const interval = setInterval(load, 5000);
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user, isGuest]);
 
   if (loading) {
     return (
@@ -54,7 +54,7 @@ export default function LobbyPage() {
     );
   }
 
-  if (!user) return null;
+  if (!user && !isGuest) return null;
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-300">
@@ -68,12 +68,14 @@ export default function LobbyPage() {
               Select a server to join. Refreshes every 5 seconds.
             </p>
           </div>
-          <Link
-            href="/settings/servers"
-            className="rounded border border-yellow-600 px-4 py-2 text-sm text-yellow-500 hover:bg-yellow-600 hover:text-gray-900 transition-colors"
-          >
-            Host a Server
-          </Link>
+          {user && (
+            <Link
+              href="/settings/servers"
+              className="rounded border border-yellow-600 px-4 py-2 text-sm text-yellow-500 hover:bg-yellow-600 hover:text-gray-900 transition-colors"
+            >
+              Host a Server
+            </Link>
+          )}
         </div>
 
         {fetchError && (
@@ -85,12 +87,14 @@ export default function LobbyPage() {
         {servers.length === 0 && !fetchError ? (
           <div className="rounded border border-gray-700 bg-gray-800 px-6 py-12 text-center text-gray-500">
             No servers online right now.{" "}
-            <Link
-              href="/settings/servers"
-              className="text-yellow-500 underline"
-            >
-              Host one?
-            </Link>
+            {user && (
+              <Link
+                href="/settings/servers"
+                className="text-yellow-500 underline"
+              >
+                Host one?
+              </Link>
+            )}
           </div>
         ) : (
           <div className="space-y-3">
