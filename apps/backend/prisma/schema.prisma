@@ -21,7 +21,8 @@ model User {
   email     String   @unique
   username  String   @unique
   name      String?
-  avatarUrl String?
+  avatarUrl   String?
+  usernameSet Boolean @default(false)
 
   lastActiveAt DateTime?
   createdAt    DateTime  @default(now())
