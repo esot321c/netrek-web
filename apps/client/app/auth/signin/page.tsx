@@ -1,21 +1,46 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { Button } from "@netrek/ui/button";
 import { Server } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3012/v1";
 
 export default function SignInPage() {
+  const router = useRouter();
+  const { loginAsGuest } = useAuth();
+
+  const handleGuestPlay = () => {
+    loginAsGuest();
+    router.push("/lobby");
+  };
+
   return (
     <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center px-4">
       <div className="w-full max-w-sm space-y-6">
         <div className="flex flex-col items-center space-y-2 text-center">
           <Server className="h-8 w-8" />
           <h1>Welcome to Netrek</h1>
-          <p className="text-sm text-muted-foreground">Sign in to play</p>
+          <p className="text-sm text-muted-foreground">Play Now</p>
         </div>
 
         <div className="space-y-3">
+          <Button className="w-full" onClick={handleGuestPlay}>
+            Play as Guest
+          </Button>
+
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">
+                or
+              </span>
+            </div>
+          </div>
+
           <a href={`${API_URL}/auth/google`}>
             <Button variant="outline" className="w-full gap-2">
               <GoogleIcon />
@@ -23,6 +48,10 @@ export default function SignInPage() {
             </Button>
           </a>
         </div>
+
+        <p className="text-center text-xs text-muted-foreground">
+          Guests don&apos;t get stats, rankings, or match history.
+        </p>
       </div>
     </div>
   );

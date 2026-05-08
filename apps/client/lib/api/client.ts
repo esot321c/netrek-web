@@ -29,7 +29,8 @@ export async function apiFetch<T>(
     throw new Error(body || `API error ${res.status}`);
   }
 
-  return res.json() as Promise<T>;
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 export async function joinServer(
@@ -49,4 +50,24 @@ export async function fetchServers() {
 
 export async function fetchServer(id: string) {
   return apiFetch<any>(`/servers/${id}`);
+}
+
+export async function joinGuestServer(
+  serverId: string,
+  team: number,
+  shipType: number,
+): Promise<{ gameToken: string; wsUrl: string }> {
+  return apiFetch(`/servers/${serverId}/join-guest`, {
+    method: "POST",
+    body: JSON.stringify({ team, shipType }),
+  });
+}
+
+export async function updateUsername(
+  username: string,
+): Promise<{ id: string; username: string; usernameSet: boolean }> {
+  return apiFetch(`/auth/username`, {
+    method: "PATCH",
+    body: JSON.stringify({ username }),
+  });
 }

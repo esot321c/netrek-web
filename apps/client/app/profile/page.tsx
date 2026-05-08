@@ -87,7 +87,9 @@ export default function ProfilePage() {
         <div className="mt-6 rounded border border-gray-700 bg-gray-800/50 p-6 font-mono">
           <h1 className="text-lg text-yellow-400 mb-4">PLAYER PROFILE</h1>
 
-          <div className="text-gray-100 text-lg">{user.name}</div>
+          <div className="text-gray-100 text-lg">
+            {user.username || user.name}
+          </div>
           <div className="text-gray-400 text-sm">
             Rank: {rankTitle(currentRank)} ({currentRank})
           </div>

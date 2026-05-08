@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { apiFetch, joinServer } from "@/lib/api/client";
+import { apiFetch, joinServer, joinGuestServer } from "@/lib/api/client";
 import { Team, ShipType } from "@netrek/shared";
 import StatsBadge from "@/components/stats-badge";
 
@@ -49,7 +50,7 @@ export default function GameDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { user, loading } = useAuth();
+  const { user, isGuest, loading } = useAuth();
   const router = useRouter();
 
   const [server, setServer] = useState<ServerDetail | null>(null);
@@ -60,13 +61,13 @@ export default function GameDetailPage({
   const [joinError, setJoinError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!loading && !user && !isGuest) {
       router.replace("/auth/signin");
     }
-  }, [user, loading, router]);
+  }, [user, isGuest, loading, router]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user && !isGuest) return;
 
     const load = async () => {
       try {
@@ -89,13 +90,15 @@ export default function GameDetailPage({
     load();
     const interval = setInterval(load, 5000);
     return () => clearInterval(interval);
-  }, [user, id]);
+  }, [user, isGuest, id]);
 
   const handleJoin = async () => {
     setJoining(true);
     setJoinError(null);
     try {
-      const result = await joinServer(id, selectedTeam, selectedShip);
+      const result = isGuest
+        ? await joinGuestServer(id, selectedTeam, selectedShip)
+        : await joinServer(id, selectedTeam, selectedShip);
       sessionStorage.setItem(
         `game:${id}`,
         JSON.stringify({ gameToken: result.gameToken, wsUrl: result.wsUrl }),
@@ -115,23 +118,23 @@ export default function GameDetailPage({
     );
   }
 
-  if (!user) return null;
+  if (!user && !isGuest) return null;
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-300">
       <div className="mx-auto max-w-3xl px-4 py-10">
         {/* Back link */}
-        <a
+        <Link
           href="/lobby"
           className="text-sm text-gray-500 hover:text-yellow-500 transition-colors"
         >
           &larr; Back to Server Browser
-        </a>
+        </Link>
 
         {/* Stats badge */}
         {user && (
           <div className="mt-4">
-            <StatsBadge username={user.name} />
+            <StatsBadge username={user.username || user.name} />
           </div>
         )}
 

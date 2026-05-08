@@ -10,6 +10,7 @@ export interface GameTokenPayload {
   serverId: string;
   team: number;
   shipType: number;
+  isGuest?: boolean;
   stats: {
     totalKills: number;
     totalDeaths: number;

@@ -2331,7 +2331,7 @@ export default function HomePage() {
             href="/auth/signin"
             className="inline-block rounded bg-yellow-600 px-8 py-3 text-lg font-semibold text-black hover:bg-yellow-500"
           >
-            Sign In to Play
+            Play now
           </Link>
         )}
       </section>

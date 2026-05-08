@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -232,6 +233,7 @@ export class AuthService {
         name: true,
         avatarUrl: true,
         roles: true,
+        usernameSet: true,
       },
     });
 
@@ -242,7 +244,41 @@ export class AuthService {
       name: user.name,
       avatarUrl: user.avatarUrl,
       roles: user.roles,
+      usernameSet: user.usernameSet,
     };
+  }
+
+  async updateUsername(userId: string, username: string) {
+    if (username.toLowerCase().startsWith("guest-")) {
+      throw new ConflictException("Username cannot start with 'Guest-'");
+    }
+
+    const existing = await this.prisma.user.findFirst({
+      where: {
+        username: { equals: username, mode: "insensitive" },
+        id: { not: userId },
+      },
+    });
+
+    if (existing) {
+      throw new ConflictException("Username already taken");
+    }
+
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { username, usernameSet: true },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        name: true,
+        avatarUrl: true,
+        roles: true,
+        usernameSet: true,
+      },
+    });
+
+    return user;
   }
 
   async getUserSessions(userId: string) {

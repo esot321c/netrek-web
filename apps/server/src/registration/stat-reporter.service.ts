@@ -22,6 +22,7 @@ export class StatReporterService implements OnModuleInit, OnModuleDestroy {
   private reportInterval: ReturnType<typeof setInterval> | null = null;
   private deltas = new Map<string, PlayerDeltas>();
   private lastReportTick = 0;
+  private guestUserIds = new Set<string>();
 
   constructor(
     private readonly config: ServerConfig,
@@ -58,6 +59,14 @@ export class StatReporterService implements OnModuleInit, OnModuleDestroy {
     this.getDelta(userId).armiesBeamed += count;
   }
 
+  markGuest(userId: string) {
+    this.guestUserIds.add(userId);
+  }
+
+  unmarkGuest(userId: string) {
+    this.guestUserIds.delete(userId);
+  }
+
   private getDelta(userId: string): PlayerDeltas {
     let d = this.deltas.get(userId);
     if (!d) {
@@ -82,13 +91,13 @@ export class StatReporterService implements OnModuleInit, OnModuleDestroy {
     const secondsElapsed = Math.round(ticksElapsed / 10);
     this.lastReportTick = this.gameService.state.currentTick;
 
-    const players = Array.from(this.deltas.entries()).map(
-      ([userId, delta]) => ({
+    const players = Array.from(this.deltas.entries())
+      .filter(([userId]) => !this.guestUserIds.has(userId))
+      .map(([userId, delta]) => ({
         userId,
         ...delta,
         secondsPlayed: secondsElapsed,
-      }),
-    );
+      }));
 
     this.deltas.clear();
 

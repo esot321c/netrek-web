@@ -21,6 +21,7 @@ import { GameService, RespawnResult } from "./game.service";
 import { GameBroadcastService } from "./game-broadcast.service";
 import { BotManagerService } from "./bot";
 import { ServerConfig } from "../config/server.config";
+import { StatReporterService } from "../registration/stat-reporter.service";
 
 @WebSocketGateway({
   namespace: "/game",
@@ -48,6 +49,7 @@ export class GameGateway
     private readonly broadcastService: GameBroadcastService,
     private readonly botManager: BotManagerService,
     private readonly config: ServerConfig,
+    private readonly statReporter: StatReporterService,
   ) {}
 
   afterInit(server: Server): void {
@@ -86,6 +88,11 @@ export class GameGateway
     client.data["userId"] = payload.sub;
     client.data["slot"] = slot;
     client.data["payload"] = payload;
+    client.data["isGuest"] = payload.isGuest === true;
+
+    if (payload.isGuest) {
+      this.statReporter.markGuest(payload.sub);
+    }
 
     this.gameService.setPlayerTokenStats(slot, {
       totalKills: payload.stats?.totalKills ?? 0,
@@ -115,6 +122,9 @@ export class GameGateway
     if (player) {
       const team = this.gameService.state.ships[player.slot]?.team;
       this.gameService.leaveGame(player.slot);
+      if (client.data["isGuest"]) {
+        this.statReporter.unmarkGuest(player.userId);
+      }
       this.gameService.clearPlayerStats(player.slot);
       if (team !== undefined) {
         this.botManager.onHumanLeave(team);
