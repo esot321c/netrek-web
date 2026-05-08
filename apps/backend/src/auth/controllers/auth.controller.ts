@@ -1,7 +1,9 @@
 import {
+  Body,
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Param,
   Req,
@@ -14,6 +16,7 @@ import { AuthGuard } from "@nestjs/passport";
 import { ApiTags, ApiOperation, ApiCookieAuth } from "@nestjs/swagger";
 import { Request, Response } from "express";
 import { AuthService } from "../services/auth.service";
+import { UpdateUsernameDto } from "../dto/update-username.dto";
 import { CookieService } from "../services/cookie.service";
 import { JwtAuthGuard } from "../guards/jwt-auth.guard";
 import { User } from "../decorators/user.decorator";
@@ -68,6 +71,14 @@ export class AuthController {
   @ApiOperation({ summary: "Get current authenticated user" })
   async me(@User() user: AuthUser) {
     return this.authService.getUserProfile(user.id);
+  }
+
+  @Patch("username")
+  @UseGuards(JwtAuthGuard)
+  @ApiCookieAuth("auth_token")
+  @ApiOperation({ summary: "Update username" })
+  async updateUsername(@User() user: AuthUser, @Body() dto: UpdateUsernameDto) {
+    return this.authService.updateUsername(user.id, dto.username);
   }
 
   @Get("sessions")
