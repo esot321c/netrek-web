@@ -13,22 +13,37 @@ import { api } from "./api";
 interface AuthUser {
   id: string;
   email: string;
+  username: string;
   name: string;
   avatarUrl: string | null;
   roles: string[];
+  usernameSet: boolean;
 }
 
 interface AuthContextValue {
   user: AuthUser | null;
+  isGuest: boolean;
   loading: boolean;
   logout: () => Promise<void>;
+  loginAsGuest: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [isGuest, setIsGuest] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  const refreshUser = useCallback(async () => {
+    try {
+      const data = await api<AuthUser>("/auth/me");
+      setUser(data);
+    } catch {
+      setUser(null);
+    }
+  }, []);
 
   useEffect(() => {
     api<AuthUser>("/auth/me")
@@ -38,15 +53,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    if (isGuest) {
+      setIsGuest(false);
+      return;
+    }
     try {
       await api("/auth/logout", { method: "POST" });
     } finally {
       setUser(null);
     }
+  }, [isGuest]);
+
+  const loginAsGuest = useCallback(() => {
+    setIsGuest(true);
+    setLoading(false);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, logout }}>
+    <AuthContext.Provider
+      value={{ user, isGuest, loading, logout, loginAsGuest, refreshUser }}
+    >
       {children}
     </AuthContext.Provider>
   );
