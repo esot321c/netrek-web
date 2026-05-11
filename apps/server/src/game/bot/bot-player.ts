@@ -49,6 +49,13 @@ export class BotPlayer {
     planets: PlanetState[],
     tmode: boolean,
     inputQueue: InputQueue,
+    planetKnowledge?: {
+      team: number;
+      armies: number;
+      features: number;
+      lastScannedTick: number;
+    }[],
+    currentTick = 0,
   ): void {
     if (this.slot === -1) return;
 
@@ -64,6 +71,9 @@ export class BotPlayer {
       alertStatuses,
       planets,
       tmode,
+      [0, 0, 0, 0],
+      planetKnowledge,
+      currentTick,
     );
 
     const gameState = deserializeGameState(buf);

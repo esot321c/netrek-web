@@ -66,35 +66,46 @@ export class WsAuthService implements OnModuleInit {
   }
 
   async validateSocket(client: Socket): Promise<GameTokenPayload | null> {
+    const token =
+      (client.handshake.auth?.["token"] as string | undefined) ??
+      client.handshake.headers?.authorization?.replace("Bearer ", "");
+
+    if (!token) {
+      this.logger.warn("No game token in handshake");
+      return null;
+    }
+
+    if (!this.publicKey) {
+      await this.fetchPublicKey();
+    }
+
+    if (!this.publicKey) {
+      this.logger.error("No public key available");
+      return null;
+    }
+
     try {
-      const token =
-        (client.handshake.auth?.["token"] as string | undefined) ??
-        client.handshake.headers?.authorization?.replace("Bearer ", "");
-
-      if (!token) {
-        this.logger.warn("No game token in handshake");
-        return null;
-      }
-
-      if (!this.publicKey) {
-        await this.fetchPublicKey();
-      }
-
-      if (!this.publicKey) {
-        this.logger.error("No public key available");
-        return null;
-      }
-
       const { payload } = await jose.jwtVerify(token, this.publicKey, {
         algorithms: ["ES256"],
       });
-
       return payload as unknown as GameTokenPayload;
-    } catch (err) {
-      this.logger.warn(
-        `Game token validation failed: ${(err as Error).message}`,
-      );
-      return null;
+    } catch {
+      // Key may be stale (backend restarted with new ephemeral key) — refetch and retry once
+      this.logger.warn("Signature verification failed, refetching public key");
+      this.publicKey = null;
+      await this.fetchPublicKey();
+      if (!this.publicKey) return null;
+      try {
+        const { payload } = await jose.jwtVerify(token, this.publicKey, {
+          algorithms: ["ES256"],
+        });
+        return payload as unknown as GameTokenPayload;
+      } catch (err) {
+        this.logger.warn(
+          `Game token validation failed after key refresh: ${(err as Error).message}`,
+        );
+        return null;
+      }
     }
   }
 }

@@ -60,25 +60,12 @@ export class GameService {
     }
   >();
 
-  /** Spawn near a random friendly planet (preferring homeworld area). */
   private spawnPoint(team: Team): { x: number; y: number } {
-    // Find friendly planets
-    const friendlyPlanets = this.state.planets.filter((p) => p.team === team);
-
-    // Pick a random friendly planet to spawn near
-    const planet =
-      friendlyPlanets.length > 0
-        ? friendlyPlanets[Math.floor(Math.random() * friendlyPlanets.length)]!
-        : {
-            x: PLANET_DEFS[HOMEWORLD_INDEX[team] ?? 0]!.x,
-            y: PLANET_DEFS[HOMEWORLD_INDEX[team] ?? 0]!.y,
-          };
-
-    // Spawn within 3000 units of the planet
+    const hw = PLANET_DEFS[HOMEWORLD_INDEX[team] ?? 0]!;
     const spread = 3000;
     return {
-      x: planet.x + (Math.random() - 0.5) * spread,
-      y: planet.y + (Math.random() - 0.5) * spread,
+      x: hw.x + (Math.random() - 0.5) * spread,
+      y: hw.y + (Math.random() - 0.5) * spread,
     };
   }
 

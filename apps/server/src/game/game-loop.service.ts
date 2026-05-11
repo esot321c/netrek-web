@@ -69,6 +69,8 @@ import {
   accelerate,
   moveShip,
   moveTorp,
+  TORP_ALIVE,
+  TORP_WALL,
   maxWarpForHull,
   distance,
   phaserDamage,
@@ -97,6 +99,7 @@ import {
   PLASMA_MIN_KILLS,
   PLASMA_HIT_RADIUS,
   PLASMA_LOCK_RANGE,
+  SCAN_RANGE,
 } from "@netrek/shared";
 import { GameService } from "./game.service";
 import { BotManagerService } from "./bot";
@@ -249,13 +252,17 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     // Step 15: Win condition check
     this.checkWinCondition(state.planets);
 
-    // Step 16: Increment tick
+    // Step 16: Update planet knowledge (fog of war)
+    this.updatePlanetScanning(state);
+
+    // Step 17: Increment tick
     state.currentTick++;
 
     // Emit tick event for broadcast
     this.eventEmitter.emit(GAME_TICK_EVENT, {
       alertStatuses: this.alertStatuses,
       tmode: this.tmode,
+      surrenderTimers: this.surrenderTimers,
     });
 
     this.botManager.setTMode(this.tmode);
@@ -449,6 +456,12 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (bestPlanetIdx >= 0) {
+      if (
+        ship.shipType === ShipType.SB &&
+        this.gameService.state.planets[bestPlanetIdx]!.team !== ship.team
+      ) {
+        return;
+      }
       this.enterOrbit(ship, bestPlanetIdx);
     }
   }
@@ -694,7 +707,6 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
 
     if (!this.tmode) return;
     if (ship.orbitPlanetId < 0) return;
-    if (ship.shieldsUp) return;
 
     const planet = this.gameService.state.planets[ship.orbitPlanetId];
     if (!planet) return;
@@ -705,6 +717,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
 
     if (planet.armies < BOMB_MIN_ARMIES) return;
 
+    ship.shieldsUp = false;
     ship.bombing = true;
     ship.beaming = 0; // Can't beam and bomb simultaneously
     ship.bombCooldownTicks = BOMB_INTERVAL;
@@ -741,11 +754,11 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
       const roll = Math.random();
       let destroyed: number;
       if (ship.shipType === ShipType.AS) {
-        // AS always bombs at least 2: 2 (50%), 3 (30%), 4 (10%), 5 (10%)
-        if (roll < 0.5) destroyed = 2;
-        else if (roll < 0.8) destroyed = 3;
-        else if (roll < 0.9) destroyed = 4;
-        else destroyed = 5;
+        // AS: 0 (50%), 2 (30%), 3 (10%), 4 (10%)
+        if (roll < 0.5) destroyed = 0;
+        else if (roll < 0.8) destroyed = 2;
+        else if (roll < 0.9) destroyed = 3;
+        else destroyed = 4;
       } else {
         // Normal: 0 (50%), 1 (30%), 2 (10%), 3 (10%)
         if (roll < 0.5) destroyed = 0;
@@ -783,7 +796,6 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
 
     if (!this.tmode) return;
     if (ship.orbitPlanetId < 0) return;
-    if (ship.shieldsUp) return;
 
     const planet = this.gameService.state.planets[ship.orbitPlanetId];
     if (!planet) return;
@@ -800,6 +812,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     );
     if (ship.armies >= capacity) return;
 
+    ship.shieldsUp = false;
     ship.beaming = 1; // beam up
     ship.bombing = false;
     ship.beamCooldownTicks = BEAM_INTERVAL;
@@ -813,12 +826,12 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
 
     if (!this.tmode) return;
     if (ship.orbitPlanetId < 0) return;
-    if (ship.shieldsUp) return;
     if (ship.armies <= 0) return;
 
     const planet = this.gameService.state.planets[ship.orbitPlanetId];
     if (!planet) return;
 
+    ship.shieldsUp = false;
     ship.beaming = 2; // beam down
     ship.bombing = false;
     ship.beamCooldownTicks = BEAM_INTERVAL;
@@ -1109,15 +1122,16 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
   // -------------------------------------------------------------------------
 
   private tryRefit(ship: ShipState, shipTypeValue: number): void {
-    if (ship.orbitPlanetId < 0) return;
     if (ship.refitTicks > 0) return;
 
-    const planet = this.gameService.state.planets[ship.orbitPlanetId];
-    if (!planet) return;
-
-    // Must be at homeworld or docked at own starbase (homeworld only for now)
-    const homeworldIdx = ship.team * 10; // homeworlds are at index 0, 10, 20, 30
-    if (ship.orbitPlanetId !== homeworldIdx) return;
+    // Must be at homeworld or docked at own starbase
+    const homeworldIdx = ship.team * 10;
+    const atHomeworld =
+      ship.orbitPlanetId >= 0 && ship.orbitPlanetId === homeworldIdx;
+    const dockedAtFriendlySb =
+      ship.dockedAt >= 0 &&
+      this.gameService.state.ships[ship.dockedAt]?.team === ship.team;
+    if (!atHomeworld && !dockedAtFriendlySb) return;
 
     // Requirements
     const stats = SHIP_STATS[ship.shipType];
@@ -1258,7 +1272,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
 
     ship.fuel -= fuelCost;
     ship.weaponTemp += stats.phaserHeat;
-    ship.phaserCooldownTicks = PHASER_COOLDOWN_TICKS;
+    ship.phaserCooldownTicks = stats.phaserCooldownTicks;
 
     // Find nearest enemy in roughly that direction, within range
     const ships = this.gameService.state.ships;
@@ -1341,8 +1355,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
       const dist = distance(ship.x, ship.y, torp.x, torp.y);
       if (dist > DET_RANGE) continue;
 
-      // Explode the torp
-      this.explodeTorp(torp);
+      this.explodeTorp(torp, "enemy-det", ship.team);
     }
 
     // Also detonate enemy plasmas in range
@@ -1414,8 +1427,13 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
       const torp = torps[i]!;
       if (!torp.alive) continue;
 
-      if (!moveTorp(torp)) {
-        torp.alive = false;
+      const moveResult = moveTorp(torp);
+      if (moveResult !== TORP_ALIVE) {
+        if (moveResult === TORP_WALL) {
+          this.explodeTorp(torp, "wall");
+        } else {
+          torp.alive = false;
+        }
         continue;
       }
 
@@ -1423,12 +1441,12 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
       for (let j = 0; j < ships.length; j++) {
         const target = ships[j]!;
         if (target.status !== ShipStatus.ALIVE) continue;
-        if (target.slotIndex === torp.ownerSlot) continue; // Can't hit self
-        if (target.team === torp.team) continue; // Can't hit teammates with direct impact
+        if (target.slotIndex === torp.ownerSlot) continue;
+        if (target.team === torp.team) continue;
 
         const dist = distance(torp.x, torp.y, target.x, target.y);
         if (dist <= TORP_HIT_RADIUS) {
-          this.explodeTorp(torp);
+          this.explodeTorp(torp, "impact");
           break;
         }
       }
@@ -1451,17 +1469,30 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private explodeTorp(torp: TorpState): void {
+  private explodeTorp(
+    torp: TorpState,
+    cause: "impact" | "wall" | "enemy-det",
+    detonatorTeam?: Team,
+  ): void {
     torp.alive = false;
 
     const state = this.gameService.state;
     const ships = state.ships;
 
-    // Splash damage to all nearby ships except the firer
     for (let i = 0; i < ships.length; i++) {
       const target = ships[i]!;
       if (target.status !== ShipStatus.ALIVE) continue;
       if (target.slotIndex === torp.ownerSlot) continue;
+
+      // Wall hit: only damages enemies of the firer
+      if (cause === "wall" && target.team === torp.team) continue;
+      // Enemy det: doesn't hurt detonator's teammates
+      if (
+        cause === "enemy-det" &&
+        detonatorTeam !== undefined &&
+        target.team === detonatorTeam
+      )
+        continue;
 
       const dist = distance(torp.x, torp.y, target.x, target.y);
       const dmg = torpSplashDamage(torp.damage, dist);
@@ -1924,6 +1955,53 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
       for (let i = 0; i < ships.length; i++) {
         ships[i]!.bombing = false;
         ships[i]!.beaming = 0;
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Planet scanning (fog of war)
+  // -------------------------------------------------------------------------
+
+  private updatePlanetScanning(state: {
+    ships: ShipState[];
+    planets: PlanetState[];
+    planetKnowledge: {
+      team: number;
+      armies: number;
+      features: number;
+      lastScannedTick: number;
+    }[][];
+    currentTick: number;
+  }): void {
+    const ships = state.ships;
+    const planets = state.planets;
+    const knowledge = state.planetKnowledge;
+    const tick = state.currentTick;
+
+    for (let pi = 0; pi < planets.length; pi++) {
+      const planet = planets[pi]!;
+      const scannedBy = [false, false, false, false];
+
+      for (let si = 0; si < ships.length; si++) {
+        const ship = ships[si]!;
+        if (ship.status !== ShipStatus.ALIVE) continue;
+        const teamIdx = ship.team as number;
+        if (scannedBy[teamIdx]) continue;
+
+        const dist = distance(ship.x, ship.y, planet.x, planet.y);
+        if (dist <= SCAN_RANGE) {
+          scannedBy[teamIdx] = true;
+        }
+      }
+
+      for (let t = 0; t < 4; t++) {
+        if (!scannedBy[t]) continue;
+        const k = knowledge[t]![pi]!;
+        k.team = planet.team as number;
+        k.armies = planet.armies;
+        k.features = planet.features;
+        k.lastScannedTick = tick;
       }
     }
   }

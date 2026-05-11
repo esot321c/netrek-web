@@ -79,12 +79,11 @@ export function distance(
 // Movement
 // ---------------------------------------------------------------------------
 
-/** Max direction units a ship can turn per tick. Halves per warp above 0. */
+/** Max direction units a ship can turn per tick. Divides linearly by speed. */
 export function turnRate(shipType: ShipType, speed: number): number {
   const base = SHIP_STATS[shipType].baseTurnRate;
   if (speed <= 0) return base;
-  // Each warp level halves turn rate
-  return Math.max(1, Math.floor(base / Math.pow(2, speed)));
+  return Math.max(1, Math.floor(base / (speed + 1)));
 }
 
 /** Max warp speed given hull damage. */
@@ -155,13 +154,14 @@ export function moveShip(ship: ShipState): void {
   ship.y = Math.max(0, Math.min(GALAXY_HEIGHT, newY));
 }
 
-/**
- * Move a torpedo one tick. Applies wobble and decrements lifetime.
- * Returns false if the torp should be killed (expired or hit wall).
- */
-export function moveTorp(torp: TorpState): boolean {
+/** Return codes for moveTorp: 0 = alive, 1 = expired, 2 = wall hit */
+export const TORP_ALIVE = 0;
+export const TORP_EXPIRED = 1;
+export const TORP_WALL = 2;
+
+export function moveTorp(torp: TorpState): number {
   torp.ticksRemaining--;
-  if (torp.ticksRemaining <= 0) return false;
+  if (torp.ticksRemaining <= 0) return TORP_EXPIRED;
 
   // Apply wobble — small random deflection to velocity direction
   const currentAngle = Math.atan2(torp.dx, -torp.dy);
@@ -174,17 +174,16 @@ export function moveTorp(torp: TorpState): boolean {
   torp.x += torp.dx;
   torp.y += torp.dy;
 
-  // Kill on wall hit
   if (
     torp.x < 0 ||
     torp.x > GALAXY_WIDTH ||
     torp.y < 0 ||
     torp.y > GALAXY_HEIGHT
   ) {
-    return false;
+    return TORP_WALL;
   }
 
-  return true;
+  return TORP_ALIVE;
 }
 
 // ---------------------------------------------------------------------------
@@ -297,8 +296,14 @@ export function updateFuel(ship: ShipState): void {
     ship.fuel -= stats.shieldCostPerTick;
   }
 
-  // Speed fuel cost (1 fuel per warp per tick)
-  ship.fuel -= ship.speed;
+  // Speed fuel cost — quadratic: cheap at low warp, expensive above cruise speed
+  const cruise = stats.cruiseSpeed;
+  if (ship.speed <= cruise) {
+    ship.fuel -= ship.speed;
+  } else {
+    const excess = ship.speed - cruise;
+    ship.fuel -= cruise + excess * excess * 2;
+  }
 
   // Clamp
   ship.fuel = Math.max(0, Math.min(stats.maxFuel, ship.fuel));

@@ -41,8 +41,8 @@ export class AuthModule {
         // OAuth redirects don't need CSRF
         { path: "auth/google", method: RequestMethod.GET },
         { path: "auth/google/callback", method: RequestMethod.GET },
-        // Bearer-auth endpoints (MCP, mobile) skip CSRF
-        // The middleware itself also skips when no auth cookie is present
+        // Guest join doesn't use cookie auth — stale auth cookies cause false CSRF failures
+        { path: "servers/:id/join-guest", method: RequestMethod.POST },
       )
       .forRoutes("*path");
   }
