@@ -18,6 +18,7 @@ import {
   Team,
   AlertStatus,
   PlanetFeature,
+  PlanetVisibility,
   type ClientShip,
   type ClientPlanet,
 } from "@netrek/shared";
@@ -66,6 +67,7 @@ function makePlanet(overrides: Partial<ClientPlanet> = {}): ClientPlanet {
     team: 0xff, // neutral
     armies: 0,
     features: 0,
+    visibility: PlanetVisibility.FRESH,
     ...overrides,
   };
 }

@@ -17,7 +17,16 @@ import {
   ShipStatus,
   Team,
   LockType,
+  PlanetVisibility,
+  TEAM_NEUTRAL,
 } from "@netrek/shared";
+
+export interface PlanetKnowledge {
+  team: number;
+  armies: number;
+  features: number;
+  lastScannedTick: number; // -1 = never scanned
+}
 
 // ---------------------------------------------------------------------------
 // Pre-allocated game state — zero GC in the hot path
@@ -129,6 +138,8 @@ export class GameState {
   readonly explosions: ExplosionState[];
   readonly plasmas: PlasmaState[];
   readonly planets: PlanetState[];
+  /** Per-team planet knowledge: planetKnowledge[teamIndex][planetIndex] */
+  readonly planetKnowledge: PlanetKnowledge[][];
   currentTick = 0;
 
   constructor() {
@@ -152,6 +163,31 @@ export class GameState {
 
     // Randomize AGRI, REPAIR, FUEL per team (matching original Bronco pl_reset)
     randomizePlanetFeatures(this.planets);
+
+    // Initialize per-team planet knowledge: all teams know starting ownership
+    // of all planets (common knowledge), but only own planets have full details.
+    // Non-own planets are STALE (known owner, unknown armies/features).
+    this.planetKnowledge = Array.from({ length: 4 }, (_, teamIdx) =>
+      this.planets.map((p) => {
+        const isOwn = (p.team as number) !== TEAM_NEUTRAL && p.team === teamIdx;
+        return {
+          team: p.team as number,
+          armies: isOwn ? p.armies : 0,
+          features: isOwn ? p.features : 0,
+          lastScannedTick: 0,
+        };
+      }),
+    );
+  }
+
+  /** Get planet visibility for a given team */
+  planetVisibility(teamIdx: number, planetIdx: number): PlanetVisibility {
+    const k = this.planetKnowledge[teamIdx]![planetIdx]!;
+    if (k.lastScannedTick < 0) return PlanetVisibility.UNKNOWN;
+    // Fresh if scanned this tick (currentTick is incremented after scanning, so check tick - 1)
+    if (k.lastScannedTick >= this.currentTick - 1)
+      return PlanetVisibility.FRESH;
+    return PlanetVisibility.STALE;
   }
 
   /** Find an empty player slot. Returns -1 if full. */
@@ -312,6 +348,20 @@ export class GameState {
       planet.lastPopTick = 0;
     }
     randomizePlanetFeatures(this.planets);
+
+    // Reset planet knowledge — each team knows only its own planets
+    for (let t = 0; t < 4; t++) {
+      for (let pi = 0; pi < this.planets.length; pi++) {
+        const p = this.planets[pi]!;
+        const k = this.planetKnowledge[t]![pi]!;
+        const isOwn = (p.team as number) !== TEAM_NEUTRAL && p.team === t;
+        k.team = isOwn ? (p.team as number) : TEAM_NEUTRAL;
+        k.armies = isOwn ? p.armies : 0;
+        k.features = isOwn ? p.features : 0;
+        k.lastScannedTick = isOwn ? 0 : -1;
+      }
+    }
+
     this.currentTick = 0;
   }
 }

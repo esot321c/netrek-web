@@ -66,6 +66,12 @@ export enum PlanetFeature {
   FUEL = 4,
 }
 
+export enum PlanetVisibility {
+  UNKNOWN = 0,
+  STALE = 1,
+  FRESH = 2,
+}
+
 // ---------------------------------------------------------------------------
 // Ship stats (immutable per ship type)
 // ---------------------------------------------------------------------------
@@ -103,6 +109,7 @@ export interface ShipStats {
   readonly maxWpnTemp: number;
   readonly maxEgnTemp: number;
   readonly cloakFuelPerTick: number;
+  readonly phaserCooldownTicks: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -319,6 +326,7 @@ export interface ClientPlanet {
   team: number; // Team enum value or 0xFF for neutral
   armies: number;
   features: number; // bitmask of PlanetFeature
+  visibility: PlanetVisibility;
 }
 
 export interface ClientSelfExtra {

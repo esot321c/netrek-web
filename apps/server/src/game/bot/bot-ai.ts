@@ -10,6 +10,7 @@ import {
   ShipStatus,
   distance,
   ORBIT_DIST,
+  ORBIT_MAX_SPEED,
   SHIP_STATS,
   BEAM_MIN_ARMIES,
 } from "@netrek/shared";
@@ -510,7 +511,9 @@ export class BotBrain {
     } else {
       // In transit: shields UP, run to safety
       inputs.push(...shieldsUp(mySelf, tick));
-      inputs.push(...moveTo(myX, myY, dest.x, dest.y, RETREAT_SPEED, tick));
+      inputs.push(
+        ...moveToOrbit(myX, myY, dest.x, dest.y, RETREAT_SPEED, tick),
+      );
     }
 
     return inputs;
@@ -594,7 +597,9 @@ export class BotBrain {
     } else {
       // In transit: shields up for protection
       inputs.push(...shieldsUp(mySelf, tick));
-      inputs.push(...moveTo(myX, myY, target.x, target.y, BOMB_SPEED, tick));
+      inputs.push(
+        ...moveToOrbit(myX, myY, target.x, target.y, BOMB_SPEED, tick),
+      );
     }
 
     return inputs;
@@ -662,7 +667,9 @@ export class BotBrain {
       inputs.push({ command: InputCommand.ORBIT, value: 0, tick });
       inputs.push({ command: InputCommand.SET_SPEED, value: 0, tick });
     } else {
-      inputs.push(...moveTo(myX, myY, planet.x, planet.y, PATROL_SPEED, tick));
+      inputs.push(
+        ...moveToOrbit(myX, myY, planet.x, planet.y, PATROL_SPEED, tick),
+      );
     }
 
     return inputs;
@@ -863,7 +870,9 @@ export class BotBrain {
         }
       } else {
         inputs.push(...shieldsUp(mySelf, tick));
-        inputs.push(...moveTo(myX, myY, pickup.x, pickup.y, TAKE_SPEED, tick));
+        inputs.push(
+          ...moveToOrbit(myX, myY, pickup.x, pickup.y, TAKE_SPEED, tick),
+        );
       }
     } else {
       // Drop phase
@@ -890,7 +899,14 @@ export class BotBrain {
       } else {
         inputs.push(...shieldsUp(mySelf, tick));
         inputs.push(
-          ...moveTo(myX, myY, targetPlanet.x, targetPlanet.y, TAKE_SPEED, tick),
+          ...moveToOrbit(
+            myX,
+            myY,
+            targetPlanet.x,
+            targetPlanet.y,
+            TAKE_SPEED,
+            tick,
+          ),
         );
       }
     }
@@ -975,6 +991,34 @@ function moveTo(
       tick,
     },
     { command: InputCommand.SET_SPEED, value: speed, tick },
+  ];
+}
+
+/** Like moveTo but decelerates when approaching orbit distance. */
+function moveToOrbit(
+  myX: number,
+  myY: number,
+  tx: number,
+  ty: number,
+  speed: number,
+  tick: number,
+): PlayerInput[] {
+  const dist = distance(myX, myY, tx, ty);
+  const decelZone = ORBIT_DIST * 4;
+  let targetSpeed = speed;
+  if (dist < decelZone) {
+    targetSpeed = Math.max(
+      ORBIT_MAX_SPEED,
+      Math.floor(speed * (dist / decelZone)),
+    );
+  }
+  return [
+    {
+      command: InputCommand.SET_DIRECTION,
+      value: directionTo(myX, myY, tx, ty),
+      tick,
+    },
+    { command: InputCommand.SET_SPEED, value: targetSpeed, tick },
   ];
 }
 

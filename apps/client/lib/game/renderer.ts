@@ -3,6 +3,7 @@ import {
   Team,
   LockType,
   PlanetFeature,
+  PlanetVisibility,
   GALAXY_WIDTH,
   GALAXY_HEIGHT,
   SHIP_STATS,
@@ -40,7 +41,7 @@ const BG_COLOR = "#000008";
 
 // Entity sizes in game units — these scale naturally with the viewport
 const SHIP_SIZE_GU = 400; // ship nose-to-tail in game units
-const SHIELD_RADIUS_GU = 520;
+const SHIELD_RADIUS_GU = 350;
 const TORP_SIZE_GU = 120;
 
 // ---------------------------------------------------------------------------
@@ -676,6 +677,18 @@ function drawPlanet(ctx: CanvasRenderingContext2D, planet: ClientPlanet): void {
   )
     return;
 
+  if (planet.visibility === PlanetVisibility.UNKNOWN) {
+    drawPlanetCircle(ctx, cx, cy, r, "#555555");
+    const fontSize = Math.max(8, Math.round(r * 0.7));
+    ctx.fillStyle = "#555555";
+    ctx.font = `${fontSize}px monospace`;
+    ctx.textAlign = "center";
+    ctx.fillText("?", cx, cy + Math.round(fontSize * 0.35));
+    ctx.fillText(planet.name, cx, cy + r + 10);
+    ctx.textAlign = "start";
+    return;
+  }
+
   const color =
     (planet.team as number) === TEAM_NEUTRAL
       ? NEUTRAL_COLOR
@@ -683,10 +696,8 @@ function drawPlanet(ctx: CanvasRenderingContext2D, planet: ClientPlanet): void {
 
   const isAgri = (planet.features & PlanetFeature.AGRICULTURAL) !== 0;
 
-  // Planet circle (dark interior, team-colored ring)
   drawPlanetCircle(ctx, cx, cy, r, color);
 
-  // Planet name below (bold if friendly, AGRI planets in ALL CAPS + white)
   const displayName = isAgri ? planet.name.toUpperCase() : planet.name;
   ctx.fillStyle = isAgri ? "#ffffff" : color;
   const fontSize = Math.max(8, Math.round(r * 0.7));
@@ -695,10 +706,9 @@ function drawPlanet(ctx: CanvasRenderingContext2D, planet: ClientPlanet): void {
   ctx.textAlign = "center";
   ctx.fillText(`${displayName} (${planet.armies})`, cx, cy + r + 10);
 
-  // Feature icons inside planet (person left, repair center, fuel right)
   drawPlanetFeatures(ctx, planet, cx, cy, r, color);
 
-  ctx.textAlign = "start"; // reset
+  ctx.textAlign = "start";
 }
 
 // ---------------------------------------------------------------------------
@@ -752,6 +762,16 @@ function renderGalaxyMap(
   for (const planet of state.planets) {
     const px = planet.x * scaleX;
     const py = planet.y * scaleY;
+
+    if (planet.visibility === PlanetVisibility.UNKNOWN) {
+      drawPlanetCircle(ctx, px, py, planetRadius, "#555555");
+      ctx.fillStyle = "#555555";
+      ctx.font = planetFont;
+      ctx.textAlign = "center";
+      ctx.fillText("?", px, py + Math.round(planetRadius * 0.35));
+      continue;
+    }
+
     const color =
       (planet.team as number) === TEAM_NEUTRAL
         ? NEUTRAL_COLOR
@@ -759,13 +779,17 @@ function renderGalaxyMap(
 
     const isAgri = (planet.features & PlanetFeature.AGRICULTURAL) !== 0;
 
-    // Planet circle (open ring)
-    drawPlanetCircle(ctx, px, py, planetRadius, color);
+    if (planet.visibility === PlanetVisibility.STALE) {
+      // Dashed border for stale planets
+      ctx.setLineDash([3, 3]);
+      drawPlanetCircle(ctx, px, py, planetRadius, color);
+      ctx.setLineDash([]);
+    } else {
+      drawPlanetCircle(ctx, px, py, planetRadius, color);
+    }
 
-    // Feature icons inside planet (person left, repair center, fuel right)
     drawPlanetFeatures(ctx, planet, px, py, planetRadius, color);
 
-    // Planet name (3-char abbreviation, bold if friendly, AGRI = white + uppercase)
     const abbr = planet.name.substring(0, 3);
     const isFriendlyPlanet = planet.team === (myTeam as number);
     ctx.fillStyle = isAgri ? "#ffffff" : color;

@@ -9,6 +9,7 @@ import {
   ShipStatus,
   AlertStatus,
   PlanetFeature,
+  PlanetVisibility,
   type ClientShip,
   type ClientPlanet,
   type ClientSelfExtra,
@@ -62,6 +63,7 @@ function makePlanet(overrides: Partial<ClientPlanet> = {}): ClientPlanet {
     team: Team.FEDERATION,
     armies: 17,
     features: PlanetFeature.REPAIR | PlanetFeature.FUEL,
+    visibility: PlanetVisibility.FRESH,
     ...overrides,
   };
 }
@@ -206,16 +208,21 @@ describe("BotBrain", () => {
     expect(brain.currentState).toBe(BotAIState.RETREAT);
   });
 
-  it("RETREAT: emits SHIELD_TOGGLE off when shields are up", () => {
-    const gs = makeState({ shieldsUp: true }, { hullDamage: 60, fuel: 5000 });
+  it("RETREAT: emits SHIELD_TOGGLE off when shields are up and at repair planet", () => {
+    // Bot must be within ORBIT_DIST (900) of the friendly planet at (20000,20000)
+    const gs = makeState(
+      { shieldsUp: true, x: 20000, y: 20000 },
+      { hullDamage: 60, fuel: 5000 },
+    );
     const inputs = brain.think(gs);
     const commands = inputs.map((i) => i.command);
     expect(commands).toContain(InputCommand.SHIELD_TOGGLE);
   });
 
-  it("RETREAT: emits REPAIR_TOGGLE when repair mode is off", () => {
+  it("RETREAT: emits REPAIR_TOGGLE when repair mode is off and at repair planet", () => {
+    // Bot must be within ORBIT_DIST (900) of the friendly planet at (20000,20000)
     const gs = makeState(
-      { shieldsUp: true, repairMode: false },
+      { shieldsUp: true, repairMode: false, x: 20000, y: 20000 },
       { hullDamage: 60, fuel: 5000 },
     );
     const inputs = brain.think(gs);

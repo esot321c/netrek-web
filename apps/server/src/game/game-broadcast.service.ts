@@ -174,6 +174,7 @@ export class GameBroadcastService {
 
     for (const player of this.players.values()) {
       const playerShip = state.ships[player.slot]!;
+      const teamIdx = playerShip.team as number;
       const buf = serializeGameState(
         state.currentTick,
         player.slot,
@@ -187,6 +188,8 @@ export class GameBroadcastService {
         state.planets,
         data.tmode,
         data.surrenderTimers,
+        state.planetKnowledge[teamIdx],
+        state.currentTick,
       );
 
       player.socket.volatile.emit("state", buf);

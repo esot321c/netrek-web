@@ -13,6 +13,7 @@ import {
   onKill,
   onRoster,
   onGameWin,
+  onConnectError,
   sendRespawn,
   sendInput,
 } from "@/lib/game/socket";
@@ -81,6 +82,7 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
   const rafRef = useRef<number>(0);
   const respawnedAt = useRef<number>(0);
   const [connected, setConnected] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
   const [phase, setPhase] = useState<"waiting" | "playing" | "dead">("waiting");
   const [chatVersion, setChatVersion] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
@@ -136,6 +138,7 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
       resumeAudio();
     });
     onDisconnect(() => setConnected(false));
+    onConnectError((err) => setConnectError(err.message));
 
     onState((state) => {
       pushSnapshot(state);
@@ -284,7 +287,16 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
           {/* Connection overlay */}
           {!connected && (
             <Overlay>
-              <p style={{ color: "#aaa", fontSize: 18 }}>Connecting...</p>
+              <p
+                style={{
+                  color: connectError ? "#ff4444" : "#aaa",
+                  fontSize: 18,
+                }}
+              >
+                {connectError
+                  ? `Connection failed: ${connectError}`
+                  : "Connecting..."}
+              </p>
             </Overlay>
           )}
 

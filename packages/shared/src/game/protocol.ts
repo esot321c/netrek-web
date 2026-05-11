@@ -26,6 +26,7 @@ import {
   type ExplosionState,
   type PlasmaState,
   type PlanetState,
+  PlanetVisibility,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -45,7 +46,7 @@ const TORP_SIZE = 6;
 const PHASER_SIZE = 8;
 const EXPLOSION_SIZE = 6;
 const PLASMA_SIZE = 7; // alive(1) + x(2) + y(2) + ownerSlot(1) + team(1)
-const PLANET_BINARY_SIZE = 4; // planetId(1) + team(1) + armies(1) + features(1)
+const PLANET_BINARY_SIZE = 5; // planetId(1) + team(1) + armies(1) + features(1) + visibility(1)
 const SELF_EXTRA_SIZE = 16;
 const INPUT_SIZE = 4;
 
@@ -155,6 +156,13 @@ export function serializeGameState(
   planets: PlanetState[],
   tmode = false,
   surrenderTimers: number[] = [0, 0, 0, 0],
+  planetKnowledge?: {
+    team: number;
+    armies: number;
+    features: number;
+    lastScannedTick: number;
+  }[],
+  currentTick = 0,
 ): ArrayBuffer {
   // Count alive entities
   const aliveShips: ShipState[] = [];
@@ -245,7 +253,10 @@ export function serializeGameState(
       offset++,
       Math.round((s.shieldStrength / stats.maxShields) * 255),
     );
-    dv.setUint8(offset++, Math.round((s.hullDamage / stats.maxHull) * 255));
+    dv.setUint8(
+      offset++,
+      Math.min(255, Math.round((s.hullDamage / stats.maxHull) * 255)),
+    );
     dv.setUint16(offset, Math.round((s.fuel / stats.maxFuel) * 65535), true);
     offset += 2;
     dv.setUint8(
@@ -320,13 +331,38 @@ export function serializeGameState(
     dv.setUint8(offset++, p.team);
   }
 
-  // Planets (4 bytes each: planetId, team, armies, features)
+  // Planets (5 bytes each: planetId, team, armies, features, visibility)
   for (let i = 0; i < planets.length; i++) {
     const p = planets[i]!;
-    dv.setUint8(offset++, p.planetId);
-    dv.setUint8(offset++, p.team);
-    dv.setUint8(offset++, Math.min(255, p.armies));
-    dv.setUint8(offset++, p.features);
+    if (planetKnowledge) {
+      const k = planetKnowledge[i]!;
+      let vis: PlanetVisibility;
+      if (k.lastScannedTick < 0) {
+        vis = PlanetVisibility.UNKNOWN;
+      } else if (k.lastScannedTick >= currentTick - 1) {
+        vis = PlanetVisibility.FRESH;
+      } else {
+        vis = PlanetVisibility.STALE;
+      }
+      if (vis === PlanetVisibility.UNKNOWN) {
+        dv.setUint8(offset++, p.planetId);
+        dv.setUint8(offset++, 0xff);
+        dv.setUint8(offset++, 0);
+        dv.setUint8(offset++, 0);
+      } else {
+        dv.setUint8(offset++, p.planetId);
+        dv.setUint8(offset++, k.team);
+        dv.setUint8(offset++, Math.min(255, k.armies));
+        dv.setUint8(offset++, k.features);
+      }
+      dv.setUint8(offset++, vis);
+    } else {
+      dv.setUint8(offset++, p.planetId);
+      dv.setUint8(offset++, p.team as number);
+      dv.setUint8(offset++, Math.min(255, p.armies));
+      dv.setUint8(offset++, p.features);
+      dv.setUint8(offset++, PlanetVisibility.FRESH);
+    }
   }
 
   // Self extra (for the recipient's own ship)
@@ -490,6 +526,7 @@ export function deserializeGameState(buffer: ArrayBuffer): ClientGameState {
     const pTeam = dv.getUint8(offset++);
     const armies = dv.getUint8(offset++);
     const features = dv.getUint8(offset++);
+    const visibility = dv.getUint8(offset++) as PlanetVisibility;
     const def = PLANET_DEFS[planetId];
     planets.push({
       planetId,
@@ -499,6 +536,7 @@ export function deserializeGameState(buffer: ArrayBuffer): ClientGameState {
       team: pTeam,
       armies,
       features,
+      visibility,
     });
   }
 

@@ -162,22 +162,11 @@ export class BotManagerService {
   }
 
   private spawnPoint(team: Team): { x: number; y: number } {
-    const friendlyPlanets = this.gameState.planets.filter(
-      (p) => p.team === team,
-    );
-
-    const planet =
-      friendlyPlanets.length > 0
-        ? friendlyPlanets[Math.floor(Math.random() * friendlyPlanets.length)]!
-        : {
-            x: PLANET_DEFS[HOMEWORLD_INDEX[team] ?? 0]!.x,
-            y: PLANET_DEFS[HOMEWORLD_INDEX[team] ?? 0]!.y,
-          };
-
+    const hw = PLANET_DEFS[HOMEWORLD_INDEX[team] ?? 0]!;
     const spread = 3000;
     return {
-      x: planet.x + (Math.random() - 0.5) * spread,
-      y: planet.y + (Math.random() - 0.5) * spread,
+      x: hw.x + (Math.random() - 0.5) * spread,
+      y: hw.y + (Math.random() - 0.5) * spread,
     };
   }
 
@@ -309,6 +298,7 @@ export class BotManagerService {
       const ship = this.gameState.ships[slot];
       if (!ship || ship.status !== ShipStatus.ALIVE) continue;
 
+      const teamIdx = bot.team as number;
       bot.onTick(
         tick,
         bot.team,
@@ -321,6 +311,8 @@ export class BotManagerService {
         this.gameState.planets,
         this.tmode,
         this.inputQueue,
+        this.gameState.planetKnowledge[teamIdx],
+        this.gameState.currentTick,
       );
     }
 
