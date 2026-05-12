@@ -26,6 +26,12 @@ import {
   ARMY_POP_LOW_THRESHOLD,
   ARMY_POP_AGRI_CHANCE,
   ARMY_POP_MAX,
+  PLAGUE_CHANCE,
+  PLAGUE_SCALING_THRESHOLD,
+  PLAGUE_SCALING_PER_ARMY,
+  PLAGUE_LOSS_PCT_MIN,
+  PLAGUE_LOSS_PCT_MAX,
+  PLAGUE_MIN_LOSS,
   TEAM_NEUTRAL,
   ORBIT_DIST,
   ORBIT_MAX_SPEED,
@@ -1674,6 +1680,23 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
         } else if (Math.random() < ARMY_POP_AGRI_CHANCE) {
           planet.armies += 1;
         }
+      }
+
+      // Plague: random army loss that scales with army count
+      let plagueChance = PLAGUE_CHANCE;
+      if (planet.armies > PLAGUE_SCALING_THRESHOLD) {
+        plagueChance +=
+          (planet.armies - PLAGUE_SCALING_THRESHOLD) * PLAGUE_SCALING_PER_ARMY;
+      }
+      if (Math.random() < plagueChance) {
+        const lossPct =
+          PLAGUE_LOSS_PCT_MIN +
+          Math.random() * (PLAGUE_LOSS_PCT_MAX - PLAGUE_LOSS_PCT_MIN);
+        const loss = Math.max(
+          PLAGUE_MIN_LOSS,
+          Math.floor(planet.armies * lossPct),
+        );
+        planet.armies = Math.max(1, planet.armies - loss);
       }
     }
   }

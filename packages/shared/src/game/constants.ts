@@ -119,6 +119,23 @@ export const ARMY_POP_AGRI_CHANCE = 0.2;
 /** Max armies a pop can add (normal) */
 export const ARMY_POP_MAX = 3;
 
+// ---------------------------------------------------------------------------
+// Plague (random army loss — spec: "Planets can lose armies to plague")
+// ---------------------------------------------------------------------------
+
+/** Base plague chance per pop interval */
+export const PLAGUE_CHANCE = 0.03;
+/** Army threshold above which plague chance scales up */
+export const PLAGUE_SCALING_THRESHOLD = 15;
+/** Additional plague chance per army above scaling threshold */
+export const PLAGUE_SCALING_PER_ARMY = 0.005;
+/** Minimum fraction of armies lost to plague */
+export const PLAGUE_LOSS_PCT_MIN = 0.2;
+/** Maximum fraction of armies lost to plague */
+export const PLAGUE_LOSS_PCT_MAX = 0.4;
+/** Plague always kills at least this many armies */
+export const PLAGUE_MIN_LOSS = 1;
+
 /** Sentinel value for neutral/unowned planet team */
 export const TEAM_NEUTRAL = 0xff;
 
