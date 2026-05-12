@@ -7,6 +7,7 @@ import {
   type ShipState,
   type TorpState,
   BotDifficulty,
+  BotRole,
   Team,
   ShipType,
   serializeGameState,
@@ -26,10 +27,11 @@ export class BotPlayer {
     readonly team: Team,
     name: string,
     shipType?: ShipType,
+    role: BotRole = BotRole.AGGRESSOR,
   ) {
     this.name = name;
     this.shipType = shipType ?? ShipType.CA;
-    this.brain = new BotBrain(difficulty, team, -1);
+    this.brain = new BotBrain(difficulty, team, -1, role);
   }
 
   assignSlot(slot: number): void {
