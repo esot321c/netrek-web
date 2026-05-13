@@ -12,15 +12,13 @@ import {
   SHIP_STATS,
   BEAM_MIN_ARMIES,
   PLANET_DEFS,
-  PlanetFeature,
 } from "@netrek/shared";
-import { type Mission, type TakePhaseState, MissionType } from "./bot-types";
+import { type Mission, type TakePhaseState } from "./bot-types";
 import {
   nearestEnemyShip,
   nearestFriendlyPlanet,
   nearestRepairPlanet,
   nearestFuelPlanet,
-  nearestEnemyPlanet,
   directionTo,
 } from "./bot-navigation";
 
@@ -183,8 +181,7 @@ export function executeTake(
   ctx: MissionContext,
   takeState: TakePhaseState,
 ): PlayerInput[] {
-  const { myX, myY, tick, gs, mySelf, difficulty, team, enemyTeam, mission } =
-    ctx;
+  const { myX, myY, tick, gs, mySelf, difficulty, team, mission } = ctx;
   const inputs: PlayerInput[] = [];
 
   const targetPlanet = gs.planets.find((p) => p.planetId === mission.targetId);
@@ -411,7 +408,6 @@ export function executeResupply(ctx: MissionContext): PlayerInput[] {
   const { myX, myY, tick, gs, mySelf, team, slot, enemyTeam } = ctx;
   const inputs: PlayerInput[] = [];
 
-  const stats = SHIP_STATS[mySelf.shipType];
   const hullDamagePct = mySelf.hullDamagePct * 100; // 0-100
   const fuelPct = mySelf.fuelPct;
 

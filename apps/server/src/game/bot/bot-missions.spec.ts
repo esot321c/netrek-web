@@ -19,12 +19,10 @@ import {
   AlertStatus,
   PlanetFeature,
   PlanetVisibility,
-  ORBIT_DIST,
   type ClientShip,
   type ClientPlanet,
   type ClientSelfExtra,
   type ClientGameState,
-  type ClientTorp,
 } from "@netrek/shared";
 
 // ---------------------------------------------------------------------------
