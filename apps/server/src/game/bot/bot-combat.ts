@@ -1,17 +1,27 @@
 import {
   type ClientShip,
   type ClientSelfExtra,
+  type ClientTorp,
   BotDifficulty,
   distance,
   ShipType,
+  SPEED_SCALE,
+  angleBetween,
+  directionToRadians,
 } from "@netrek/shared";
+import {
+  MAX_TORPS_IN_FLIGHT,
+  FUEL_DISENGAGE_PCT,
+  WTEMP_TORP_STOP_PCT,
+  WTEMP_ALL_STOP_PCT,
+} from "./bot-types";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const PHASER_MAX_RANGE = 6000;
-const TORP_EFFECTIVE_RANGE = 15000;
+const TORP_EFFECTIVE_RANGE = 9000;
 const FUEL_RETREAT_THRESHOLD = 1000;
 
 // Hull damage thresholds for retreating (higher = waits longer before retreating)
@@ -110,9 +120,13 @@ export function shouldFirePhaser(
 
 /**
  * Should fire torpedo?
- * Only if within effective torpedo range.
+ * Only if within effective range, no burnout.
  */
-export function shouldFireTorp(distToTarget: number): boolean {
+export function shouldFireTorp(
+  distToTarget: number,
+  self: ClientSelfExtra,
+): boolean {
+  if (self.weaponBurnout > 0) return false;
   return distToTarget <= TORP_EFFECTIVE_RANGE;
 }
 
@@ -132,4 +146,130 @@ export function shouldCloak(
   if (difficulty === BotDifficulty.NEWBIE) return false;
   if (self.armies <= 0) return false;
   return self.fuel > FUEL_RETREAT_THRESHOLD;
+}
+
+// ---------------------------------------------------------------------------
+// Target leading
+// ---------------------------------------------------------------------------
+
+/**
+ * Calculate torp firing direction with target leading.
+ * NEWBIE: fires at current position.
+ * COMPETENT: 50% lead.
+ * VETERAN: full lead.
+ */
+export function leadTarget(
+  myX: number,
+  myY: number,
+  targetX: number,
+  targetY: number,
+  targetDir: number,
+  targetSpeed: number,
+  torpSpeed: number,
+  difficulty: BotDifficulty,
+): number {
+  const directDir = angleBetween(myX, myY, targetX, targetY);
+  if (difficulty === BotDifficulty.NEWBIE) return directDir;
+
+  const dist = Math.sqrt((targetX - myX) ** 2 + (targetY - myY) ** 2);
+  if (dist < 100 || torpSpeed <= 0) return directDir;
+
+  const torpTravel = torpSpeed * SPEED_SCALE;
+  const ticksToReach = dist / torpTravel;
+
+  const targetRad = directionToRadians(targetDir);
+  const targetDist = targetSpeed * SPEED_SCALE * ticksToReach;
+  const predictX = targetX + Math.sin(targetRad) * targetDist;
+  const predictY = targetY + -Math.cos(targetRad) * targetDist;
+
+  const leadDir = angleBetween(myX, myY, predictX, predictY);
+
+  if (difficulty === BotDifficulty.COMPETENT) {
+    let delta = (leadDir - directDir + 256) % 256;
+    if (delta > 128) delta -= 256;
+    const halfDelta = Math.round(delta * 0.5);
+    return (directDir + halfDelta + 256) % 256;
+  }
+
+  return leadDir;
+}
+
+// ---------------------------------------------------------------------------
+// Torp discipline
+// ---------------------------------------------------------------------------
+
+/** Count how many torps a given slot currently has in flight. */
+export function countTorpsInFlight(torps: ClientTorp[], slot: number): number {
+  let count = 0;
+  for (const t of torps) {
+    if (t.ownerSlot === slot) count++;
+  }
+  return count;
+}
+
+/** Should fire torp with discipline? Checks in-flight count against difficulty limit. */
+export function shouldFireTorpDisciplined(
+  torpsInFlight: number,
+  distToTarget: number,
+  self: ClientSelfExtra,
+  difficulty: BotDifficulty,
+): boolean {
+  if (self.weaponBurnout > 0) return false;
+  if (distToTarget > 9000) return false;
+  if (torpsInFlight >= MAX_TORPS_IN_FLIGHT[difficulty]) return false;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Fuel and temperature awareness
+// ---------------------------------------------------------------------------
+
+/** Should disengage due to low fuel? */
+export function shouldDisengageFuel(fuel: number, maxFuel: number): boolean {
+  return fuel / maxFuel < FUEL_DISENGAGE_PCT;
+}
+
+/** Should stop firing torps due to weapon temp? */
+export function shouldStopTorpTemp(
+  weaponTemp: number,
+  maxWpnTemp: number,
+): boolean {
+  return weaponTemp / maxWpnTemp >= WTEMP_TORP_STOP_PCT;
+}
+
+/** Should stop firing all weapons due to weapon temp? */
+export function shouldStopAllTemp(
+  weaponTemp: number,
+  maxWpnTemp: number,
+): boolean {
+  return weaponTemp / maxWpnTemp >= WTEMP_ALL_STOP_PCT;
+}
+
+// ---------------------------------------------------------------------------
+// Enemy torp detonation
+// ---------------------------------------------------------------------------
+
+/** Should det enemy torps? Based on difficulty and number of nearby enemy torps. */
+export function shouldDetEnemyTorps(
+  myX: number,
+  myY: number,
+  torps: ClientTorp[],
+  myTeam: number,
+  difficulty: BotDifficulty,
+): boolean {
+  if (difficulty === BotDifficulty.NEWBIE) return false;
+
+  const detRange = 1600; // DET_RANGE from constants
+  let nearbyCount = 0;
+  for (const t of torps) {
+    if (t.team === myTeam) continue;
+    const dx = t.x - myX;
+    const dy = t.y - myY;
+    if (dx * dx + dy * dy < detRange * detRange) {
+      nearbyCount++;
+    }
+  }
+
+  if (difficulty === BotDifficulty.COMPETENT) return nearbyCount >= 3;
+  return nearbyCount >= 2; // VETERAN: more aggressive det
 }

@@ -5,6 +5,13 @@ import {
   shouldFirePhaser,
   shouldFireTorp,
   shouldCloak,
+  leadTarget,
+  countTorpsInFlight,
+  shouldFireTorpDisciplined,
+  shouldDetEnemyTorps,
+  shouldDisengageFuel,
+  shouldStopTorpTemp,
+  shouldStopAllTemp,
 } from "./bot-combat";
 import {
   BotDifficulty,
@@ -14,6 +21,8 @@ import {
   AlertStatus,
   type ClientShip,
   type ClientSelfExtra,
+  type ClientTorp,
+  angleBetween,
 } from "@netrek/shared";
 
 // ---------------------------------------------------------------------------
@@ -67,6 +76,7 @@ function makeSelf(overrides: Partial<ClientSelfExtra> = {}): ClientSelfExtra {
     lockTargetId: -1,
     tmode: false,
     surrenderTimer: 0,
+    enemySurrenderTimer: 0,
     ...overrides,
   };
 }
@@ -256,19 +266,28 @@ describe("shouldFirePhaser", () => {
 
 describe("shouldFireTorp", () => {
   it("fires when within effective torp range", () => {
-    expect(shouldFireTorp(10000)).toBe(true);
+    const self = makeSelf({ weaponBurnout: 0 });
+    expect(shouldFireTorp(8000, self)).toBe(true);
   });
 
   it("fires at the effective torp range boundary", () => {
-    expect(shouldFireTorp(15000)).toBe(true);
+    const self = makeSelf({ weaponBurnout: 0 });
+    expect(shouldFireTorp(9000, self)).toBe(true);
   });
 
   it("does NOT fire beyond effective torp range", () => {
-    expect(shouldFireTorp(15001)).toBe(false);
+    const self = makeSelf({ weaponBurnout: 0 });
+    expect(shouldFireTorp(9001, self)).toBe(false);
   });
 
   it("fires at point-blank range", () => {
-    expect(shouldFireTorp(100)).toBe(true);
+    const self = makeSelf({ weaponBurnout: 0 });
+    expect(shouldFireTorp(100, self)).toBe(true);
+  });
+
+  it("does NOT fire during weapon burnout", () => {
+    const self = makeSelf({ weaponBurnout: 5 });
+    expect(shouldFireTorp(5000, self)).toBe(false);
   });
 });
 
@@ -305,5 +324,245 @@ describe("shouldCloak", () => {
   it("veteran: does NOT cloak when no armies and fuel is ok", () => {
     const self = makeSelf({ armies: 0, fuel: 8000 });
     expect(shouldCloak(self, BotDifficulty.VETERAN)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// leadTarget
+// ---------------------------------------------------------------------------
+
+describe("leadTarget", () => {
+  it("returns current direction for NEWBIE (no lead)", () => {
+    const dir = leadTarget(
+      0,
+      5000,
+      5000,
+      5000,
+      64,
+      6,
+      12,
+      BotDifficulty.NEWBIE,
+    );
+    // NEWBIE: should just return direction to current position
+    const directDir = angleBetween(0, 5000, 5000, 5000);
+    expect(dir).toBe(directDir);
+  });
+
+  it("leads target for VETERAN", () => {
+    // Target moving south (128) so lead diverges from direct east (64)
+    const noLead = leadTarget(
+      0,
+      5000,
+      5000,
+      5000,
+      128,
+      6,
+      12,
+      BotDifficulty.NEWBIE,
+    );
+    const fullLead = leadTarget(
+      0,
+      5000,
+      5000,
+      5000,
+      128,
+      6,
+      12,
+      BotDifficulty.VETERAN,
+    );
+    expect(fullLead).not.toBe(noLead);
+  });
+
+  it("COMPETENT leads at ~50% of veteran offset", () => {
+    // Target moving south (128) so lead diverges from direct east (64)
+    const noLead = leadTarget(
+      0,
+      5000,
+      5000,
+      5000,
+      128,
+      6,
+      12,
+      BotDifficulty.NEWBIE,
+    );
+    const halfLead = leadTarget(
+      0,
+      5000,
+      5000,
+      5000,
+      128,
+      6,
+      12,
+      BotDifficulty.COMPETENT,
+    );
+    const fullLead = leadTarget(
+      0,
+      5000,
+      5000,
+      5000,
+      128,
+      6,
+      12,
+      BotDifficulty.VETERAN,
+    );
+    const noLeadDelta = (fullLead - noLead + 256) % 256;
+    const halfLeadDelta = (halfLead - noLead + 256) % 256;
+    if (noLeadDelta > 0 && noLeadDelta < 128) {
+      expect(halfLeadDelta).toBeGreaterThan(0);
+      expect(halfLeadDelta).toBeLessThan(noLeadDelta);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// countTorpsInFlight
+// ---------------------------------------------------------------------------
+
+describe("countTorpsInFlight", () => {
+  it("counts torps owned by the bot's slot", () => {
+    const torps: ClientTorp[] = [
+      { x: 100, y: 100, ownerSlot: 0, team: Team.FEDERATION },
+      { x: 200, y: 200, ownerSlot: 0, team: Team.FEDERATION },
+      { x: 300, y: 300, ownerSlot: 1, team: Team.FEDERATION },
+    ];
+    expect(countTorpsInFlight(torps, 0)).toBe(2);
+    expect(countTorpsInFlight(torps, 1)).toBe(1);
+    expect(countTorpsInFlight(torps, 2)).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// shouldFireTorpDisciplined
+// ---------------------------------------------------------------------------
+
+describe("shouldFireTorpDisciplined", () => {
+  it("allows fire when under max for difficulty", () => {
+    expect(
+      shouldFireTorpDisciplined(3, 9000, makeSelf(), BotDifficulty.COMPETENT),
+    ).toBe(true);
+  });
+  it("blocks fire when at max for VETERAN", () => {
+    expect(
+      shouldFireTorpDisciplined(4, 5000, makeSelf(), BotDifficulty.VETERAN),
+    ).toBe(false);
+  });
+  it("NEWBIE has higher limit", () => {
+    expect(
+      shouldFireTorpDisciplined(7, 5000, makeSelf(), BotDifficulty.NEWBIE),
+    ).toBe(true);
+  });
+  it("blocks fire when weapon burnout active", () => {
+    expect(
+      shouldFireTorpDisciplined(
+        0,
+        5000,
+        makeSelf({ weaponBurnout: 5 }),
+        BotDifficulty.VETERAN,
+      ),
+    ).toBe(false);
+  });
+  it("blocks fire beyond 9000 range", () => {
+    expect(
+      shouldFireTorpDisciplined(0, 9001, makeSelf(), BotDifficulty.VETERAN),
+    ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// shouldDisengageFuel
+// ---------------------------------------------------------------------------
+
+describe("shouldDisengageFuel", () => {
+  it("returns true when fuel below 30%", () => {
+    expect(shouldDisengageFuel(2800, 10000)).toBe(true);
+  });
+  it("returns false when fuel above 30%", () => {
+    expect(shouldDisengageFuel(3500, 10000)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// shouldStopTorpTemp
+// ---------------------------------------------------------------------------
+
+describe("shouldStopTorpTemp", () => {
+  it("returns true when weapon temp above 70% of max", () => {
+    expect(shouldStopTorpTemp(750, 1000)).toBe(true);
+  });
+  it("returns false when below threshold", () => {
+    expect(shouldStopTorpTemp(600, 1000)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// shouldStopAllTemp
+// ---------------------------------------------------------------------------
+
+describe("shouldStopAllTemp", () => {
+  it("returns true when weapon temp above 90% of max", () => {
+    expect(shouldStopAllTemp(950, 1000)).toBe(true);
+  });
+  it("returns false when below threshold", () => {
+    expect(shouldStopAllTemp(800, 1000)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// shouldDetEnemyTorps
+// ---------------------------------------------------------------------------
+
+describe("shouldDetEnemyTorps", () => {
+  it("NEWBIE never dets", () => {
+    const torps: ClientTorp[] = [
+      { x: 100, y: 100, ownerSlot: 1, team: Team.ROMULANS },
+      { x: 200, y: 200, ownerSlot: 1, team: Team.ROMULANS },
+      { x: 300, y: 300, ownerSlot: 1, team: Team.ROMULANS },
+    ];
+    expect(
+      shouldDetEnemyTorps(0, 0, torps, Team.FEDERATION, BotDifficulty.NEWBIE),
+    ).toBe(false);
+  });
+
+  it("COMPETENT dets when 3+ enemy torps are close", () => {
+    const torps: ClientTorp[] = [
+      { x: 100, y: 100, ownerSlot: 1, team: Team.ROMULANS },
+      { x: 200, y: 200, ownerSlot: 1, team: Team.ROMULANS },
+      { x: 300, y: 300, ownerSlot: 1, team: Team.ROMULANS },
+    ];
+    expect(
+      shouldDetEnemyTorps(
+        0,
+        0,
+        torps,
+        Team.FEDERATION,
+        BotDifficulty.COMPETENT,
+      ),
+    ).toBe(true);
+  });
+
+  it("COMPETENT does NOT det when only 2 enemy torps close", () => {
+    const torps: ClientTorp[] = [
+      { x: 100, y: 100, ownerSlot: 1, team: Team.ROMULANS },
+      { x: 200, y: 200, ownerSlot: 1, team: Team.ROMULANS },
+    ];
+    expect(
+      shouldDetEnemyTorps(
+        0,
+        0,
+        torps,
+        Team.FEDERATION,
+        BotDifficulty.COMPETENT,
+      ),
+    ).toBe(false);
+  });
+
+  it("VETERAN dets when 2+ enemy torps are close", () => {
+    const torps: ClientTorp[] = [
+      { x: 100, y: 100, ownerSlot: 1, team: Team.ROMULANS },
+      { x: 200, y: 200, ownerSlot: 1, team: Team.ROMULANS },
+    ];
+    expect(
+      shouldDetEnemyTorps(0, 0, torps, Team.FEDERATION, BotDifficulty.VETERAN),
+    ).toBe(true);
   });
 });
