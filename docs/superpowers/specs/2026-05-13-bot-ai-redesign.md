@@ -62,6 +62,9 @@ Output is still `PlayerInput[]`. Nothing changes downstream -- `BotPlayer`,
   `bot-names.ts` -- untouched or minimally changed.
 - `PlayerInput` contract, `InputQueue`, tick event system.
 - Difficulty = decision quality, never aim scatter or reaction delays.
+- Key mechanic: bombing, beam up, and beam down automatically lower shields.
+  Raising shields cancels those actions. Bots must never toggle shields up
+  while actively bombing or beaming.
 
 ---
 
@@ -176,9 +179,11 @@ If escortee dies or drops all armies: mission invalid, re-assess.
 
 #### BOMB(planet)
 
-Navigate to enemy planet. Orbit, shields down, bomb. Cloak while bombing if veteran
-and fuel allows. If planet is depleted, check if it's takeable (low armies, bot has
-kills). If not, re-assess for next bomb target or different mission.
+Navigate to enemy planet. Orbit, start bombing. Shields drop automatically when
+bombing begins -- do NOT raise shields while bombing or it will cancel the action.
+Cloak while bombing if veteran and fuel allows. If planet is depleted, check if
+it's takeable (low armies, bot has kills). If not, re-assess for next bomb target
+or different mission.
 
 Note: bots use whatever ship type they spawned with. Ship selection is a spawn-time
 decision in bot-manager, not a per-mission decision. Refitting is out of scope.
@@ -190,7 +195,8 @@ Three phases with distinct behavior:
 **Pickup phase:**
 
 - Navigate to friendly planet with armies >= BEAM_MIN_ARMIES.
-- Orbit, shields down, beam up.
+- Orbit, beam up. Shields drop automatically when beaming begins -- do NOT raise
+  shields while beaming or it will cancel the action.
 - Only carry what's needed: `min(capacity, target.armies + 1)`. Don't overload.
 
 **Transit phase:**
@@ -206,8 +212,9 @@ Three phases with distinct behavior:
 
 - When close to target planet (~1 screen away), NOW cloak.
 - Reduce speed for orbit approach.
-- Orbit, beam down. Det incoming torps. If plasma incoming, shields up briefly
-  then resume beaming.
+- Orbit, beam down. Shields drop automatically. Det incoming torps. If plasma
+  incoming, shields up to absorb it -- but this cancels beaming, so restart
+  beam down immediately after the plasma hits.
 - When done: shields up, warp 6+, head toward friendlies.
 
 Army count decision: Don't carry more than needed. Carrying 2-4 for a quick take
@@ -320,29 +327,38 @@ Difficulty scaling:
 - COMPETENT: dets when multiple torps are within close range
 - VETERAN: tactical det -- creates holes, dets before impact
 
-#### Speed variation
+#### Purposeful speed changes
 
-Constant speed = predictable = easy torp target. Vary speed to make leading
-difficult. BUT: ships have acceleration curves. Changing speed every tick means
-the ship never reaches any speed. Changes happen on a 20-40 tick (2-4 second)
-cycle:
+Speed changes serve maneuvers, not randomness. Turn rate is faster at low warp,
+so speed and direction work together:
 
-- Hold speed for 20-40 ticks (commit, let ship accelerate)
-- Switch to a different speed
-- Occasionally burst to high speed for repositioning
-- Drop to low speed for tight dodging
+- **Drop to warp 2-3** when needing a sharp turn (to dodge, to reverse, to
+  reposition). The ship turns much faster at low speed.
+- **Raise to warp 4-6** after completing the turn to move through the new
+  heading, dodge a torp stream laterally, or close/create distance.
+- **Burst to high warp (7-9)** to reposition quickly -- close on a fleeing
+  target, escape a bad position, or rush through a gap.
+- **Hold speed** long enough for the ship to actually accelerate and travel.
+  Ships have acceleration curves -- changing speed every tick means never
+  reaching any speed. Commit for 20-40 ticks (2-4 seconds) before changing.
+
+The pattern is: slow down -> turn -> speed up -> travel -> repeat. Not random
+oscillation.
 
 Difficulty scaling:
 
-- NEWBIE: constant speed
-- COMPETENT: changes speed every 30-40 ticks between 2-3 values
-- VETERAN: active pattern with 20-30 tick holds, burst/dodge cycles
+- NEWBIE: constant speed, no tactical speed changes
+- COMPETENT: slows for turns, speeds up after. Basic slow/fast cycle.
+- VETERAN: full tactical speed management -- drops speed for sharp dodges,
+  bursts for repositioning, matches speed to the maneuver
 
-#### Direction changes (jinking)
+#### Direction changes
 
 Same timing constraint as speed: ships have turn rates. A direction change every
-tick means the ship barely turns. Commit to a heading for 15-30 ticks, then change.
-Perpendicular dodges relative to incoming torps.
+tick means the ship barely turns. Commit to a heading for 15-30 ticks, then
+change. Perpendicular dodges relative to incoming torps. Direction and speed
+changes should be coordinated -- drop speed, start the turn, then accelerate
+through the new heading.
 
 #### Tractor/pressor
 
@@ -371,9 +387,11 @@ Difficulty scaling:
 
 Difficulty scaling:
 
-- NEWBIE: shields always up
-- COMPETENT: drops shields when clearly safe
-- VETERAN: active toggling during combat lulls
+- NEWBIE: drops shields to repair, but only when clearly out of danger (no
+  enemies on scan). Slow to raise them back -- reacts late to threats.
+- COMPETENT: drops shields when safe, raises promptly when enemies appear
+- VETERAN: active toggling during combat lulls -- brief shield drops between
+  incoming torp volleys
 
 #### Fuel awareness
 
@@ -403,19 +421,19 @@ the target rather than flying straight at them.
 Difficulty is decision quality only. No artificial aim scatter, no reaction delays,
 no handicaps.
 
-| Behavior          | NEWBIE                     | COMPETENT         | VETERAN                             |
-| ----------------- | -------------------------- | ----------------- | ----------------------------------- |
-| Torp aim          | Current position           | 50% lead          | Full lead                           |
-| Torp discipline   | No limit                   | 5 in flight       | 3-4, dets misses                    |
-| Det usage         | Never                      | Defensive         | Tactical                            |
-| Speed variation   | Constant                   | Moderate (30-40t) | Active (20-30t)                     |
-| Tractor/pressor   | Never                      | Pressor only      | Full                                |
-| Shield toggle     | Always up                  | Safe moments      | Active management                   |
-| Fuel management   | Ignores                    | Retreats when low | Conserves, disengages early         |
-| Weapon temp       | Ignores                    | Stops at burnout  | Stops at 70%                        |
-| Target selection  | Closest                    | Distance + damage | Distance + damage + strategic value |
-| Assessment        | Simplistic (fewer signals) | Most signals      | All signals + deduplication         |
-| Cloaker detection | Doesn't watch              | Reacts when close | Watches galactic, anticipates       |
+| Behavior          | NEWBIE                      | COMPETENT         | VETERAN                             |
+| ----------------- | --------------------------- | ----------------- | ----------------------------------- |
+| Torp aim          | Current position            | 50% lead          | Full lead                           |
+| Torp discipline   | No limit                    | 5 in flight       | 3-4, dets misses                    |
+| Det usage         | Never                       | Defensive         | Tactical                            |
+| Speed management  | Constant                    | Slows for turns   | Full tactical (slow/turn/burst)     |
+| Tractor/pressor   | Never                       | Pressor only      | Full                                |
+| Shield toggle     | Drops when safe, slow react | Prompt react      | Active mid-combat toggling          |
+| Fuel management   | Ignores                     | Retreats when low | Conserves, disengages early         |
+| Weapon temp       | Ignores                     | Stops at burnout  | Stops at 70%                        |
+| Target selection  | Closest                     | Distance + damage | Distance + damage + strategic value |
+| Assessment        | Simplistic (fewer signals)  | Most signals      | All signals + deduplication         |
+| Cloaker detection | Doesn't watch               | Reacts when close | Watches galactic, anticipates       |
 
 ---
 
