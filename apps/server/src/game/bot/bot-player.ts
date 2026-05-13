@@ -13,6 +13,7 @@ import {
   deserializeGameState,
 } from "@netrek/shared";
 import { BotBrain } from "./bot-ai";
+import { type TeamBotState } from "./bot-types";
 import { InputQueue } from "../state/input-queue";
 
 export class BotPlayer {
@@ -56,6 +57,7 @@ export class BotPlayer {
       lastScannedTick: number;
     }[],
     currentTick = 0,
+    teamBots?: TeamBotState[],
   ): void {
     if (this.slot === -1) return;
 
@@ -77,7 +79,7 @@ export class BotPlayer {
     );
 
     const gameState = deserializeGameState(buf);
-    const commands = this.brain.think(gameState);
+    const commands = this.brain.think(gameState, teamBots ?? []);
 
     for (const cmd of commands) {
       inputQueue.enqueue(this.slot, cmd);

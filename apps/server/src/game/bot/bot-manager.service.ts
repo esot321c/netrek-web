@@ -12,6 +12,7 @@ import {
   PLANET_DEFS,
 } from "@netrek/shared";
 import { BotPlayer } from "./bot-player";
+import { type TeamBotState } from "./bot-types";
 import { BotNamePool } from "./bot-names";
 import { BotConfig, loadBotConfig, buildDifficultyList } from "./bot-config";
 import { parseOrder } from "./bot-orders";
@@ -25,7 +26,6 @@ const SHIP_TYPES_FOR_BOTS: ShipType[] = [
   ShipType.DD,
   ShipType.CA,
   ShipType.BB,
-  ShipType.AS,
 ];
 
 /** Homeworld indices in PLANET_DEFS (first planet of each team's 10) */
@@ -293,6 +293,19 @@ export class BotManagerService {
       this.spawnBot(dead.team, dead.difficulty, dead.shipType);
     }
 
+    // Build team mission registries
+    const fedBots: TeamBotState[] = [];
+    const romBots: TeamBotState[] = [];
+    for (const [slot, bot] of this.bots) {
+      const entry: TeamBotState = {
+        slot,
+        currentMission: bot.brain.currentMission,
+        missionTargetId: bot.brain.currentMissionTargetId,
+      };
+      if (bot.team === Team.FEDERATION) fedBots.push(entry);
+      else romBots.push(entry);
+    }
+
     // Run bot AI for each alive bot
     for (const [slot, bot] of this.bots) {
       const ship = this.gameState.ships[slot];
@@ -313,6 +326,7 @@ export class BotManagerService {
         this.inputQueue,
         this.gameState.planetKnowledge[teamIdx],
         this.gameState.currentTick,
+        bot.team === Team.FEDERATION ? fedBots : romBots,
       );
     }
 
