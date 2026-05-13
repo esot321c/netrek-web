@@ -1,13 +1,4 @@
-import {
-  type ClientGameState,
-  type ClientShip,
-  type ClientPlanet,
-  type ClientTorp,
-  type PlayerInput,
-  BotDifficulty,
-  BotAIState,
-  Team,
-} from "@netrek/shared";
+import { BotDifficulty, BotAIState } from "@netrek/shared";
 
 export enum MissionType {
   PATROL = 0,
