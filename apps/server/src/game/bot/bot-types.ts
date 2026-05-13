@@ -38,7 +38,7 @@ export interface MissionCandidate {
   score: number;
 }
 
-export const enum CombatPhase {
+export enum CombatPhase {
   NONE = 0,
   ENGAGED = 1,
   DISENGAGING = 2, // no enemies for < 20 ticks, waiting to confirm exit
