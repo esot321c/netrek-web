@@ -4,12 +4,6 @@ export enum BotDifficulty {
   VETERAN = 2,
 }
 
-export enum BotRole {
-  AGGRESSOR = 0,
-  DEFENDER = 1,
-  HUNTER = 2,
-}
-
 export enum BotAIState {
   PATROL = 0,
   ATTACK = 1,
