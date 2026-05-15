@@ -1681,7 +1681,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      // Plague: chance scales with army count, kills 20-40% of armies
+      // Plague: random army loss that scales with army count
       let plagueChance = PLAGUE_CHANCE;
       if (planet.armies > PLAGUE_SCALING_THRESHOLD) {
         plagueChance +=

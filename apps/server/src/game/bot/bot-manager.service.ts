@@ -6,6 +6,7 @@ import {
   ShipType,
   ShipStatus,
   BotDifficulty,
+  BotRole,
   type ShipState,
   type ChatMessage,
   type AlertStatus,
@@ -98,9 +99,13 @@ export class BotManagerService {
       this.config.botsPerTeam,
     );
 
+    // Assign roles: 2 aggressors, 1 defender, 1 hunter (for 4 bots)
+    // For other counts, cycle through roles
+    const roles = this.buildRoleList(this.config.botsPerTeam);
+
     for (const team of [Team.FEDERATION, Team.ROMULANS]) {
-      for (const difficulty of difficulties) {
-        this.spawnBot(team, difficulty);
+      for (let i = 0; i < difficulties.length; i++) {
+        this.spawnBot(team, difficulties[i]!, undefined, roles[i]);
       }
     }
 
@@ -109,10 +114,21 @@ export class BotManagerService {
     );
   }
 
+  private buildRoleList(count: number): BotRole[] {
+    const roles: BotRole[] = [];
+    for (let i = 0; i < count; i++) {
+      if (i === 0) roles.push(BotRole.DEFENDER);
+      else if (i % 3 === 2) roles.push(BotRole.HUNTER);
+      else roles.push(BotRole.AGGRESSOR);
+    }
+    return roles;
+  }
+
   private spawnBot(
     team: Team,
     difficulty: BotDifficulty,
     shipType?: ShipType,
+    role?: BotRole,
   ): BotPlayer | null {
     const slot = this.gameState.findEmptySlot();
     if (slot === -1) {
@@ -127,7 +143,15 @@ export class BotManagerService {
         Math.floor(Math.random() * SHIP_TYPES_FOR_BOTS.length)
       ]!;
 
-    const bot = new BotPlayer(difficulty, team, name, resolvedShipType);
+    const resolvedRole = role ?? this.pickRoleForTeam(team);
+
+    const bot = new BotPlayer(
+      difficulty,
+      team,
+      name,
+      resolvedShipType,
+      resolvedRole,
+    );
     bot.assignSlot(slot);
 
     const spawn = this.spawnPoint(team);
@@ -161,6 +185,19 @@ export class BotManagerService {
     this.broadcastService.broadcastRoster();
 
     this.logger.debug(`Removed bot ${bot.name} from slot ${slot}`);
+  }
+
+  private pickRoleForTeam(team: Team): BotRole {
+    let defenders = 0;
+    let hunters = 0;
+    for (const [, bot] of this.bots) {
+      if (bot.team !== team) continue;
+      if (bot.brain.role === BotRole.DEFENDER) defenders++;
+      if (bot.brain.role === BotRole.HUNTER) hunters++;
+    }
+    if (defenders === 0) return BotRole.DEFENDER;
+    if (hunters === 0) return BotRole.HUNTER;
+    return BotRole.AGGRESSOR;
   }
 
   private spawnPoint(team: Team): { x: number; y: number } {
@@ -277,6 +314,7 @@ export class BotManagerService {
       team: Team;
       difficulty: BotDifficulty;
       shipType: ShipType;
+      role: BotRole;
     }[] = [];
     for (const [slot, bot] of this.bots) {
       const ship = this.gameState.ships[slot];
@@ -287,12 +325,13 @@ export class BotManagerService {
           team: bot.team,
           difficulty: bot.difficulty,
           shipType: bot.shipType,
+          role: bot.brain.role,
         });
       }
     }
     for (const dead of deadBots) {
       this.removeBot(dead.slot);
-      this.spawnBot(dead.team, dead.difficulty, dead.shipType);
+      this.spawnBot(dead.team, dead.difficulty, dead.shipType, dead.role);
     }
 
     // Build team mission registries

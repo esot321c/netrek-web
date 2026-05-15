@@ -1,0 +1,1 @@
+{"root":["./src/index.ts","./src/api/client.ts","./src/api/index.ts","./src/api/types.ts","./src/auth/index.ts","./src/game/bot-types.ts","./src/game/chat-types.ts","./src/game/constants.ts","./src/game/index.ts","./src/game/physics.ts","./src/game/protocol.ts","./src/game/ranks.ts","./src/game/types.ts"],"version":"5.9.2"}

@@ -4,6 +4,7 @@ import {
   type PlayerInput,
   BotDifficulty,
   BotAIState,
+  BotRole,
   Team,
   ShipStatus,
 } from "@netrek/shared";
@@ -100,12 +101,16 @@ export class BotBrain {
   private failedMissionType: MissionType | null = null;
   private failedMissionUntil = 0;
 
+  readonly role: BotRole;
+
   constructor(
     readonly difficulty: BotDifficulty,
     readonly team: Team,
     slot: number,
+    role: BotRole = BotRole.AGGRESSOR,
   ) {
     this.slot = slot;
+    this.role = role;
     this.enemyTeam = team === Team.FEDERATION ? Team.ROMULANS : Team.FEDERATION;
     this.combat = createCombatState();
   }
