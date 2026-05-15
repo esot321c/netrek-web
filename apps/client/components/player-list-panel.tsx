@@ -31,7 +31,8 @@ export default function PlayerListPanel({
   return (
     <div
       style={{
-        width: "50%",
+        flex: 1,
+        minWidth: 0,
         fontFamily: "monospace",
         fontSize: 11,
         color: "#aaa",

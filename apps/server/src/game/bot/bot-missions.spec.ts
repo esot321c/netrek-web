@@ -624,8 +624,15 @@ describe("executeDefend", () => {
       x: 70000,
       y: 50000,
     });
+    const enemy = makeShip({
+      slotIndex: 5,
+      team: Team.ROMULANS,
+      x: 72000,
+      y: 50000,
+      status: ShipStatus.ALIVE,
+    });
     const mySelf = makeShip({ x: 50000, y: 50000 });
-    const gs = makeGS({ planets: [planet], ships: [mySelf] });
+    const gs = makeGS({ planets: [planet], ships: [mySelf, enemy] });
     const mission = makeMission({
       type: MissionType.DEFEND,
       targetId: 5,
@@ -637,7 +644,8 @@ describe("executeDefend", () => {
     expect(commands).toContain(InputCommand.SET_DIRECTION);
     expect(commands).toContain(InputCommand.SET_SPEED);
     const speedCmd = inputs.find((i) => i.command === InputCommand.SET_SPEED);
-    expect(speedCmd!.value).toBe(6);
+    expect(speedCmd!.value).toBeGreaterThanOrEqual(4);
+    expect(speedCmd!.value).toBeLessThanOrEqual(6);
   });
 
   it("returns empty when planet is not friendly anymore", () => {
@@ -666,8 +674,15 @@ describe("executeDefend", () => {
       x: 70000,
       y: 50000,
     });
+    const enemy = makeShip({
+      slotIndex: 5,
+      team: Team.ROMULANS,
+      x: 72000,
+      y: 50000,
+      status: ShipStatus.ALIVE,
+    });
     const mySelf = makeShip({ x: 50000, y: 50000, shieldsUp: false });
-    const gs = makeGS({ planets: [planet], ships: [mySelf] });
+    const gs = makeGS({ planets: [planet], ships: [mySelf, enemy] });
     const mission = makeMission({
       type: MissionType.DEFEND,
       targetId: 5,
@@ -686,8 +701,15 @@ describe("executeDefend", () => {
       x: 50500,
       y: 50000,
     });
+    const enemy = makeShip({
+      slotIndex: 5,
+      team: Team.ROMULANS,
+      x: 52000,
+      y: 50000,
+      status: ShipStatus.ALIVE,
+    });
     const mySelf = makeShip({ x: 50000, y: 50000 });
-    const gs = makeGS({ planets: [planet], ships: [mySelf] });
+    const gs = makeGS({ planets: [planet], ships: [mySelf, enemy] });
     const mission = makeMission({
       type: MissionType.DEFEND,
       targetId: 5,
@@ -699,6 +721,25 @@ describe("executeDefend", () => {
     expect(speedCmd).toBeDefined();
     // Near planet: speed 2-4 (we use 3, or ORBIT_MAX_SPEED from moveToOrbit)
     expect(speedCmd!.value).toBeLessThanOrEqual(4);
+  });
+
+  it("returns empty when no enemies threaten the planet", () => {
+    const planet = makePlanet({
+      planetId: 5,
+      team: Team.FEDERATION,
+      x: 50500,
+      y: 50000,
+    });
+    const mySelf = makeShip({ x: 50000, y: 50000 });
+    const gs = makeGS({ planets: [planet], ships: [mySelf] });
+    const mission = makeMission({
+      type: MissionType.DEFEND,
+      targetId: 5,
+    });
+    const ctx = makeCtx({ mySelf, gs, mission });
+
+    const inputs = executeDefend(ctx);
+    expect(inputs).toHaveLength(0);
   });
 });
 
@@ -838,26 +879,48 @@ describe("executeOgg", () => {
 // ---------------------------------------------------------------------------
 
 describe("executeResupply", () => {
-  it("enters repair mode when no enemies nearby and damaged", () => {
+  it("active repairs in place when damaged and no repair planet nearby", () => {
     const mySelf = makeShip({
       x: 50000,
       y: 50000,
-      hullDamagePct: 0.5, // 50% damage
+      hullDamagePct: 0.5,
       repairMode: false,
+      shieldsUp: true,
     });
-    const gs = makeGS({
-      ships: [mySelf],
-      self: makeSelf({ hullDamage: 50 }),
-    });
+    const gs = makeGS({ ships: [mySelf] });
     const ctx = makeCtx({ mySelf, gs });
 
     const inputs = executeResupply(ctx);
     const commands = inputs.map((i) => i.command);
+    // Shields down for hull repair
+    expect(commands).toContain(InputCommand.SHIELD_TOGGLE);
+    // R mode + stop
     expect(commands).toContain(InputCommand.REPAIR_TOGGLE);
-    // Should also stop
     const speedCmd = inputs.find((i) => i.command === InputCommand.SET_SPEED);
     expect(speedCmd).toBeDefined();
     expect(speedCmd!.value).toBe(0);
+  });
+
+  it("heads to repair planet when close and damaged", () => {
+    const repairPlanet = makePlanet({
+      planetId: 0,
+      team: Team.FEDERATION,
+      x: 55000,
+      y: 50000,
+      features: 0x02, // PlanetFeature.REPAIR
+    });
+    const mySelf = makeShip({
+      x: 50000,
+      y: 50000,
+      hullDamagePct: 0.5,
+      repairMode: false,
+    });
+    const gs = makeGS({ ships: [mySelf], planets: [repairPlanet] });
+    const ctx = makeCtx({ mySelf, gs });
+
+    const inputs = executeResupply(ctx);
+    const commands = inputs.map((i) => i.command);
+    expect(commands).toContain(InputCommand.SET_DIRECTION);
   });
 
   it("returns empty when fully healed and fuel is adequate", () => {

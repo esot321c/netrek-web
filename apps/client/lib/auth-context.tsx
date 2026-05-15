@@ -33,10 +33,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [isGuest, setIsGuest] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return sessionStorage.getItem("guest") === "1";
-  });
+  const [isGuest, setIsGuest] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const refreshUser = useCallback(async () => {
@@ -49,13 +46,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const wasGuest = sessionStorage.getItem("guest") === "1";
     api<AuthUser>("/auth/me")
       .then((data) => {
         setUser(data);
         setIsGuest(false);
         sessionStorage.removeItem("guest");
       })
-      .catch(() => setUser(null))
+      .catch(() => {
+        setUser(null);
+        if (wasGuest) setIsGuest(true);
+      })
       .finally(() => setLoading(false));
   }, []);
 

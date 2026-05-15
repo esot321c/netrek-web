@@ -26,6 +26,12 @@ import {
   ARMY_POP_LOW_THRESHOLD,
   ARMY_POP_AGRI_CHANCE,
   ARMY_POP_MAX,
+  PLAGUE_CHANCE,
+  PLAGUE_SCALING_THRESHOLD,
+  PLAGUE_SCALING_PER_ARMY,
+  PLAGUE_LOSS_PCT_MIN,
+  PLAGUE_LOSS_PCT_MAX,
+  PLAGUE_MIN_LOSS,
   TEAM_NEUTRAL,
   ORBIT_DIST,
   ORBIT_MAX_SPEED,
@@ -81,6 +87,7 @@ import {
   updateFuel,
   updateRepair,
   applyDamage,
+  armyCapacity,
   angleBetween,
   LockType,
   MAX_PLAYERS,
@@ -805,11 +812,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     if (planet.armies < BEAM_MIN_ARMIES) return;
 
     // Check army carry capacity
-    const stats = SHIP_STATS[ship.shipType];
-    const capacity = Math.min(
-      stats.maxArmies,
-      Math.floor(ship.kills * stats.armiesPerKill),
-    );
+    const capacity = armyCapacity(ship.shipType, ship.kills);
     if (ship.armies >= capacity) return;
 
     ship.shieldsUp = false;
@@ -827,6 +830,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     if (!this.tmode) return;
     if (ship.orbitPlanetId < 0) return;
     if (ship.armies <= 0) return;
+    if (ship.shipType === ShipType.SB) return;
 
     const planet = this.gameService.state.planets[ship.orbitPlanetId];
     if (!planet) return;
@@ -865,11 +869,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
           ship.beaming = 0;
           continue;
         }
-        const stats = SHIP_STATS[ship.shipType];
-        const capacity = Math.min(
-          stats.maxArmies,
-          Math.floor(ship.kills * stats.armiesPerKill),
-        );
+        const capacity = armyCapacity(ship.shipType, ship.kills);
         if (ship.armies >= capacity) {
           ship.beaming = 0;
           continue;
@@ -1182,8 +1182,9 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
   private fireTorp(ship: ShipState, direction: number): void {
     const stats = SHIP_STATS[ship.shipType];
 
-    // Can't fire during weapon burnout
+    // Can't fire during weapon burnout or torp cooldown
     if (ship.weaponBurnoutTicks > 0) return;
+    if (ship.torpCooldownTicks > 0) return;
 
     // Fuel check
     const fuelCost = stats.torpDamage * stats.torpFuelMultiplier;
@@ -1194,6 +1195,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
 
     ship.fuel -= fuelCost;
     ship.weaponTemp += stats.torpHeat;
+    ship.torpCooldownTicks = 1;
 
     const rad = directionToRadians(direction);
     const torpVel = stats.torpSpeed * SPEED_SCALE;
@@ -1623,6 +1625,9 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
       if (ship.phaserCooldownTicks > 0) {
         ship.phaserCooldownTicks--;
       }
+      if (ship.torpCooldownTicks > 0) {
+        ship.torpCooldownTicks--;
+      }
     }
 
     // Decay phaser visuals
@@ -1675,6 +1680,23 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
           planet.armies += 1;
         }
       }
+
+      // Plague: chance scales with army count, kills 20-40% of armies
+      let plagueChance = PLAGUE_CHANCE;
+      if (planet.armies > PLAGUE_SCALING_THRESHOLD) {
+        plagueChance +=
+          (planet.armies - PLAGUE_SCALING_THRESHOLD) * PLAGUE_SCALING_PER_ARMY;
+      }
+      if (Math.random() < plagueChance) {
+        const lossPct =
+          PLAGUE_LOSS_PCT_MIN +
+          Math.random() * (PLAGUE_LOSS_PCT_MAX - PLAGUE_LOSS_PCT_MIN);
+        const loss = Math.max(
+          PLAGUE_MIN_LOSS,
+          Math.floor(planet.armies * lossPct),
+        );
+        planet.armies = Math.max(1, planet.armies - loss);
+      }
     }
   }
 
@@ -1709,7 +1731,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
       }
       updateFuel(ship);
 
-      // Repair — orbit bonus is always +repair*4 in thousandths, independent of repair mode
+      let orbitRepairPlanet = false;
       if (ship.orbitPlanetId >= 0) {
         const planet = planets[ship.orbitPlanetId];
         if (
@@ -1717,19 +1739,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
           planet.team === ship.team &&
           planet.features & PlanetFeature.REPAIR
         ) {
-          const stats = SHIP_STATS[ship.shipType];
-          const shieldGain =
-            (stats.shieldRepairRate * 4 * stats.maxShields) / 1000;
-          const hullGain = (stats.hullRepairRate * 4 * stats.maxHull) / 1000;
-          if (ship.shieldStrength < stats.maxShields) {
-            ship.shieldStrength = Math.min(
-              stats.maxShields,
-              ship.shieldStrength + shieldGain,
-            );
-          }
-          if (!ship.shieldsUp && ship.hullDamage > 0) {
-            ship.hullDamage = Math.max(0, ship.hullDamage - hullGain);
-          }
+          orbitRepairPlanet = true;
         }
       }
       if (ship.dockedAt >= 0) {
@@ -1746,7 +1756,7 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
           );
         }
       }
-      updateRepair(ship);
+      updateRepair(ship, orbitRepairPlanet);
     }
   }
 

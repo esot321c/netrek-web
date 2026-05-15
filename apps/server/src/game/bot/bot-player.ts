@@ -36,6 +36,7 @@ export class BotPlayer {
   assignSlot(slot: number): void {
     this.slot = slot;
     this.brain.slot = slot;
+    this.brain.name = this.name;
   }
 
   onTick(

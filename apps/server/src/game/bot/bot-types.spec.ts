@@ -41,8 +41,8 @@ describe("bot-types", () => {
   });
 
   describe("constants", () => {
-    it("assess interval is 15 ticks", () => {
-      expect(ASSESS_INTERVAL_TICKS).toBe(15);
+    it("assess interval is 30 ticks", () => {
+      expect(ASSESS_INTERVAL_TICKS).toBe(30);
     });
     it("order expiry is 600 ticks", () => {
       expect(ORDER_EXPIRE_TICKS).toBe(600);

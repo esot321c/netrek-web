@@ -24,8 +24,8 @@ export const DIRECTION_COUNT = 256;
 // Movement
 // ---------------------------------------------------------------------------
 
-/** Game units per warp per tick. At warp 8 a CA moves 320 units/tick = 3200 units/sec. */
-export const SPEED_SCALE = 40;
+/** Game units per warp per tick. Original Netrek WARP1 ≈ 23 (calibrated: SB warp 2 Rom→Dra = 21s). */
+export const SPEED_SCALE = 23;
 
 // ---------------------------------------------------------------------------
 // Weapons
@@ -37,8 +37,8 @@ export const DET_FUEL_COST = 100;
 export const DET_WEAPON_HEAT = 20;
 export const DET_RANGE = 1600;
 
-export const TORP_LIFETIME_BASE = 50;
-export const TORP_LIFETIME_VARIANCE = 20;
+export const TORP_LIFETIME_BASE = 30;
+export const TORP_LIFETIME_VARIANCE = 10;
 export const TORP_WOBBLE = 1.5; // direction units of random deflection per tick
 export const TORP_HIT_RADIUS = 350; // game units — ship collision radius
 
@@ -118,6 +118,19 @@ export const ARMY_POP_LOW_THRESHOLD = 4;
 export const ARMY_POP_AGRI_CHANCE = 0.2;
 /** Max armies a pop can add (normal) */
 export const ARMY_POP_MAX = 3;
+
+/** Plague: base chance per pop interval */
+export const PLAGUE_CHANCE = 0.03;
+/** Plague: armies above this threshold increase plague risk */
+export const PLAGUE_SCALING_THRESHOLD = 15;
+/** Plague: additional chance per army above the threshold */
+export const PLAGUE_SCALING_PER_ARMY = 0.005;
+/** Plague: minimum fraction of armies lost */
+export const PLAGUE_LOSS_PCT_MIN = 0.2;
+/** Plague: maximum fraction of armies lost */
+export const PLAGUE_LOSS_PCT_MAX = 0.4;
+/** Plague: always lose at least this many */
+export const PLAGUE_MIN_LOSS = 1;
 
 /** Sentinel value for neutral/unowned planet team */
 export const TEAM_NEUTRAL = 0xff;
@@ -848,7 +861,7 @@ export const SHIP_STATS: Readonly<Record<ShipType, ShipStats>> = Object.freeze({
     phaserHeat: 120,
     torpHeat: 30,
     explosionDamage: 200,
-    maxWpnTemp: 130,
+    maxWpnTemp: 1300,
     maxEgnTemp: 1000,
     cloakFuelPerTick: 500,
     phaserCooldownTicks: 5,

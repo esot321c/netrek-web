@@ -47,7 +47,7 @@ const PHASER_SIZE = 8;
 const EXPLOSION_SIZE = 6;
 const PLASMA_SIZE = 7; // alive(1) + x(2) + y(2) + ownerSlot(1) + team(1)
 const PLANET_BINARY_SIZE = 5; // planetId(1) + team(1) + armies(1) + features(1) + visibility(1)
-const SELF_EXTRA_SIZE = 16;
+const SELF_EXTRA_SIZE = 18;
 const INPUT_SIZE = 4;
 
 // ---------------------------------------------------------------------------
@@ -391,6 +391,15 @@ export function serializeGameState(
     // surrender timer for this player's team (ticks remaining, 0 = no timer)
     dv.setUint16(offset, surrenderTimers[recipientTeam] ?? 0, true);
     offset += 2;
+    // surrender timer for the enemy team (max of all non-own teams)
+    let enemySurrTimer = 0;
+    for (let t = 0; t < surrenderTimers.length; t++) {
+      if (t !== recipientTeam && (surrenderTimers[t] ?? 0) > enemySurrTimer) {
+        enemySurrTimer = surrenderTimers[t] ?? 0;
+      }
+    }
+    dv.setUint16(offset, enemySurrTimer, true);
+    offset += 2;
   } else {
     // Zero-fill self extra
     for (let i = 0; i < SELF_EXTRA_SIZE; i++) {
@@ -558,6 +567,8 @@ export function deserializeGameState(buffer: ArrayBuffer): ClientGameState {
   const tmode = dv.getUint8(offset++) !== 0;
   const surrenderTimer = dv.getUint16(offset, true);
   offset += 2;
+  const enemySurrenderTimer = dv.getUint16(offset, true);
+  offset += 2;
 
   return {
     tick,
@@ -583,6 +594,7 @@ export function deserializeGameState(buffer: ArrayBuffer): ClientGameState {
       lockTargetId,
       tmode,
       surrenderTimer,
+      enemySurrenderTimer,
     },
   };
 }

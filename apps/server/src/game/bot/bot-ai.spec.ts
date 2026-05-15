@@ -163,11 +163,11 @@ describe("BotBrain", () => {
   // -------------------------------------------------------------------------
 
   it("reports ATTACK state when an enemy ship is within combat engage distance", () => {
-    // Place enemy within COMBAT_ENGAGE_DIST (8000)
+    // Place enemy within FORCED_FIGHT_RANGE (3000) — even task-focused missions fight at this range
     const enemy = makeShip({
       slotIndex: 1,
       team: Team.ROMULANS,
-      x: 55000, // 5000 units away
+      x: 52000, // 2000 units away
       y: 50000,
       status: ShipStatus.ALIVE,
     });
@@ -188,10 +188,10 @@ describe("BotBrain", () => {
   // -------------------------------------------------------------------------
 
   it("heavy damage triggers re-assessment and switches to RESUPPLY mission", () => {
-    // First tick: low damage, enemy planet nearby => BOMB should score well
+    // First tick: healthy bot, enemy planet nearby => BOMB should score well
     // BOMB score for planet at 60000: dist = ~10000, armies = 17
     //   = 40 + 17*3 - 10000*0.002 = 40 + 51 - 20 = 71
-    // RESUPPLY at full health: = 20 + 0 + 0 = 20. So BOMB wins.
+    // RESUPPLY at full health: needsResupply=false, score=0. BOMB wins.
     const enemyPlanet = makePlanet({
       planetId: 10,
       team: Team.ROMULANS,
@@ -200,8 +200,8 @@ describe("BotBrain", () => {
       armies: 17,
     });
     const gs1 = makeState(
+      { hullDamagePct: 0, fuelPct: 1 },
       {},
-      { hullDamage: 0, fuel: 10000 },
       [],
       [enemyPlanet],
       0,
@@ -209,13 +209,13 @@ describe("BotBrain", () => {
     brain.think(gs1);
     expect(brain.currentMission).toBe(MissionType.BOMB);
 
-    // Second tick: sudden jump to 80 hull damage on a CA (maxHull=100).
-    // Delta = 80, which is > 0.3 * 100 = 30. Triggers needsReassessment.
-    // Resupply score = 20 + (80/100)*80 + (1-0.2)*60 = 20+64+48 = 132
+    // Second tick: sudden jump to 80% hull damage.
+    // Delta = 0.8 - 0 = 0.8 > 0.3. Triggers needsReassessment.
+    // Resupply score = 20 + 0.8*80 + (1-0.2)*60 = 20+64+48 = 132
     // That exceeds BOMB score of 71.
     const gs2 = makeState(
+      { hullDamagePct: 0.8, fuelPct: 0.2 },
       {},
-      { hullDamage: 80, fuel: 2000 },
       [],
       [enemyPlanet],
       1,
@@ -313,7 +313,7 @@ describe("BotBrain", () => {
 
   it("currentState maps RESUPPLY mission to RETREAT BotAIState for backward compat", () => {
     // Force high damage + low fuel so assessor picks RESUPPLY
-    const gs = makeState({}, { hullDamage: 80, fuel: 2000 }, [], [], 0);
+    const gs = makeState({ hullDamagePct: 0.8, fuelPct: 0.2 }, {}, [], [], 0);
     brain.think(gs);
     // RESUPPLY mission should map to RETREAT in the BotAIState getter
     if (brain.currentMission === MissionType.RESUPPLY) {
@@ -356,9 +356,8 @@ describe("BotBrain", () => {
     // To verify expiry, remove the planet so BOMB has no valid target.
     const gs2 = makeState({}, {}, [], [], 600);
     brain.think(gs2);
-    // No enemy planets left => BOMB not a candidate. RESUPPLY_BASE (20) > PATROL_BASE (15).
-    // With full health and fuel, RESUPPLY score = 20+0+0 = 20.
-    expect(brain.currentMission).toBe(MissionType.RESUPPLY);
+    // No enemy planets left => BOMB not a candidate. Healthy bot: RESUPPLY=0, PATROL=15.
+    expect(brain.currentMission).toBe(MissionType.PATROL);
   });
 
   it("think accepts optional teamBots parameter", () => {
@@ -403,7 +402,7 @@ describe("BotBrain", () => {
     const enemy = makeShip({
       slotIndex: 1,
       team: Team.ROMULANS,
-      x: 55000,
+      x: 52000, // within forced-fight range
       y: 50000,
       status: ShipStatus.ALIVE,
     });

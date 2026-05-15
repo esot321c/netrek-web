@@ -438,17 +438,17 @@ describe("countTorpsInFlight", () => {
 describe("shouldFireTorpDisciplined", () => {
   it("allows fire when under max for difficulty", () => {
     expect(
-      shouldFireTorpDisciplined(3, 9000, makeSelf(), BotDifficulty.COMPETENT),
+      shouldFireTorpDisciplined(2, 9000, makeSelf(), BotDifficulty.COMPETENT),
     ).toBe(true);
   });
   it("blocks fire when at max for VETERAN", () => {
     expect(
-      shouldFireTorpDisciplined(4, 5000, makeSelf(), BotDifficulty.VETERAN),
+      shouldFireTorpDisciplined(2, 5000, makeSelf(), BotDifficulty.VETERAN),
     ).toBe(false);
   });
   it("NEWBIE has higher limit", () => {
     expect(
-      shouldFireTorpDisciplined(7, 5000, makeSelf(), BotDifficulty.NEWBIE),
+      shouldFireTorpDisciplined(3, 5000, makeSelf(), BotDifficulty.NEWBIE),
     ).toBe(true);
   });
   it("blocks fire when weapon burnout active", () => {

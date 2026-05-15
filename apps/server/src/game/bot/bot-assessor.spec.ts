@@ -103,10 +103,8 @@ function makeGS(overrides: Partial<ClientGameState> = {}): ClientGameState {
 
 describe("assess", () => {
   it("RESUPPLY scores high when hull damage is high", () => {
-    const myShip = makeShip({ slotIndex: 0 });
-    const gs = makeGS({
-      self: makeSelf({ hullDamage: 80, fuel: 2000 }),
-    });
+    const myShip = makeShip({ slotIndex: 0, hullDamagePct: 0.6, fuelPct: 0.2 });
+    const gs = makeGS();
     const candidates = assess(
       50000,
       50000,
@@ -255,6 +253,27 @@ describe("assess", () => {
     expect(bombWithDup!.score).toBeLessThan(bombNoDup!.score);
   });
 
+  it("healthy bots score RESUPPLY at 0, below PATROL", () => {
+    const myShip = makeShip({ slotIndex: 0, hullDamagePct: 0, fuelPct: 1 });
+    const gs = makeGS();
+    const candidates = assess(
+      50000,
+      50000,
+      gs,
+      Team.FEDERATION,
+      Team.ROMULANS,
+      0,
+      BotDifficulty.COMPETENT,
+      [],
+      null,
+      myShip,
+    );
+    const resupply = candidates.find((c) => c.type === MissionType.RESUPPLY);
+    const patrol = candidates.find((c) => c.type === MissionType.PATROL);
+    expect(resupply!.score).toBe(0);
+    expect(patrol!.score).toBeGreaterThan(resupply!.score);
+  });
+
   it("PATROL is always a candidate as fallback", () => {
     const myShip = makeShip({ slotIndex: 0 });
     const gs = makeGS({ ships: [myShip] });
@@ -354,10 +373,8 @@ describe("assess", () => {
   });
 
   it("results are sorted by score descending", () => {
-    const myShip = makeShip({ slotIndex: 0 });
-    const gs = makeGS({
-      self: makeSelf({ hullDamage: 80, fuel: 2000 }),
-    });
+    const myShip = makeShip({ slotIndex: 0, hullDamagePct: 0.6, fuelPct: 0.2 });
+    const gs = makeGS();
     const candidates = assess(
       50000,
       50000,

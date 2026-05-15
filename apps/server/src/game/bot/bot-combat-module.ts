@@ -32,6 +32,7 @@ import {
   shouldDetEnemyTorps,
   shouldStopTorpTemp,
   shouldStopAllTemp,
+  shouldDisengageFuel,
   selectTarget,
 } from "./bot-combat";
 import { directionTo } from "./bot-navigation";
@@ -130,14 +131,10 @@ export function updateCombat(
   myTeam: Team,
   enemyTeam: Team,
   tick: number,
+  engageRange: number = COMBAT_ENGAGE_DIST,
 ): PlayerInput[] | null {
   const enemies = getAliveEnemies(state.ships, myTeam, mySelf.slotIndex);
-  const nearest = closestEnemyInRange(
-    mySelf.x,
-    mySelf.y,
-    enemies,
-    COMBAT_ENGAGE_DIST,
-  );
+  const nearest = closestEnemyInRange(mySelf.x, mySelf.y, enemies, engageRange);
 
   // --- Phase transitions ---
   switch (combat.phase) {
@@ -184,6 +181,18 @@ export function updateCombat(
       }
       break;
     }
+  }
+
+  // --- Disengage: bail out if hull or fuel is critical ---
+  const stats = SHIP_STATS[mySelf.shipType];
+  if (
+    mySelf.hullDamagePct > 0.7 ||
+    shouldDisengageFuel(self.fuel, stats.maxFuel)
+  ) {
+    combat.phase = CombatPhase.NONE;
+    combat.targetSlot = -1;
+    combat.ticksSinceLastThreat = 0;
+    return null;
   }
 
   // --- In combat: gather inputs from sub-systems ---
@@ -293,17 +302,16 @@ export function combatShieldLogic(
 
     if (enemyNearby && !mySelf.shieldsUp) {
       // Slow to raise — only raise if tick aligns with react delay
-      // We use a simple modulo check to simulate delayed reaction
       if (tick % NEWBIE_SHIELD_REACT_TICKS === 0) {
-        inputs.push({ command: InputCommand.SHIELD_TOGGLE, tick, value: 0 });
+        inputs.push({ command: InputCommand.SHIELD_TOGGLE, tick, value: 1 });
       }
     } else if (!enemyNearby && mySelf.shieldsUp) {
-      inputs.push({ command: InputCommand.SHIELD_TOGGLE, tick, value: 0 });
+      inputs.push({ command: InputCommand.SHIELD_TOGGLE, tick, value: 2 });
     }
   } else {
     // COMPETENT / VETERAN: shields up during combat
     if (!mySelf.shieldsUp) {
-      inputs.push({ command: InputCommand.SHIELD_TOGGLE, tick, value: 0 });
+      inputs.push({ command: InputCommand.SHIELD_TOGGLE, tick, value: 1 });
     }
   }
 
@@ -351,11 +359,12 @@ export function combatMovement(
     return inputs;
   }
 
-  // --- NEWBIE: constant speed 6, direct approach ---
+  // --- NEWBIE: slightly angled approach, no range management ---
   if (difficulty === BotDifficulty.NEWBIE) {
-    const dir = directionTo(mySelf.x, mySelf.y, target.x, target.y);
+    const toDir = directionTo(mySelf.x, mySelf.y, target.x, target.y);
+    const dir = dist > MIN_COMBAT_DIST ? (toDir + 16) & 0xff : toDir;
     inputs.push({ command: InputCommand.SET_DIRECTION, tick, value: dir });
-    inputs.push({ command: InputCommand.SET_SPEED, tick, value: 6 });
+    inputs.push({ command: InputCommand.SET_SPEED, tick, value: 5 });
     return inputs;
   }
 
@@ -383,16 +392,21 @@ export function combatMovement(
       combat.currentManeuverSpeed = 5;
     }
   } else if (dist > MAX_COMBAT_DIST) {
-    // Too far: close in
+    // Too far: close in at an angle to avoid head-on collision
     if (canChangeDir) {
       const toDir = directionTo(mySelf.x, mySelf.y, target.x, target.y);
-      inputs.push({ command: InputCommand.SET_DIRECTION, tick, value: toDir });
+      const approachDir = (toDir + 24) & 0xff;
+      inputs.push({
+        command: InputCommand.SET_DIRECTION,
+        tick,
+        value: approachDir,
+      });
       combat.lastDirectionChangeTick = tick;
     }
     if (canChangeSpeed) {
-      inputs.push({ command: InputCommand.SET_SPEED, tick, value: 7 });
+      inputs.push({ command: InputCommand.SET_SPEED, tick, value: 5 });
       combat.lastSpeedChangeTick = tick;
-      combat.currentManeuverSpeed = 7;
+      combat.currentManeuverSpeed = 5;
     }
   } else {
     // In range: circle strafe

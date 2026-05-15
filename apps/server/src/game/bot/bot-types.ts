@@ -87,8 +87,8 @@ export function aiStateToMissionType(state: BotAIState): MissionType {
   }
 }
 
-/** Assessor timer interval in ticks (1.5 seconds at 10Hz). */
-export const ASSESS_INTERVAL_TICKS = 15;
+/** Assessor timer interval in ticks (3 seconds at 10Hz). */
+export const ASSESS_INTERVAL_TICKS = 30;
 
 /** Combat exit hysteresis — ticks with no enemies before exiting combat. */
 export const COMBAT_EXIT_TICKS = 20;
@@ -130,9 +130,9 @@ export const WTEMP_ALL_STOP_PCT = 0.9;
 
 /** Max torps in flight per difficulty. */
 export const MAX_TORPS_IN_FLIGHT: Record<BotDifficulty, number> = {
-  [BotDifficulty.NEWBIE]: 8,
-  [BotDifficulty.COMPETENT]: 5,
-  [BotDifficulty.VETERAN]: 4,
+  [BotDifficulty.NEWBIE]: 4,
+  [BotDifficulty.COMPETENT]: 3,
+  [BotDifficulty.VETERAN]: 2,
 };
 
 /** Torp danger distance for evasion per difficulty. */
@@ -147,3 +147,9 @@ export const SHIELDS_DOWN_SAFE_DIST = 10000;
 
 /** Newbie shield react delay — ticks before raising shields after enemy appears. */
 export const NEWBIE_SHIELD_REACT_TICKS = 15;
+
+/** TAKE mission: steer around enemies within this distance during transit. */
+export const TAKE_AVOID_DIST = 8000;
+
+/** TAKE mission: cloak when this close to target planet. */
+export const TAKE_CLOAK_DIST = 12000;

@@ -150,6 +150,7 @@ export interface ShipState {
 
   // Weapon cooldowns
   phaserCooldownTicks: number;
+  torpCooldownTicks: number;
 
   // Combat stats
   kills: number;
@@ -344,6 +345,7 @@ export interface ClientSelfExtra {
   lockTargetId: number; // planet index or player slot (-1 when NONE)
   tmode: boolean;
   surrenderTimer: number;
+  enemySurrenderTimer: number;
 }
 
 export interface ClientGameState {

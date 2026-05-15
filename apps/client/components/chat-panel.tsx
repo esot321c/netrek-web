@@ -36,7 +36,6 @@ export default function ChatPanel({ chatVersion }: ChatPanelProps) {
         color: "#aaa",
         padding: 4,
         overflow: "hidden",
-        borderLeft: "1px solid #333",
         cursor: typingState === TypingState.IDLE ? "pointer" : "text",
       }}
       onClick={() => {

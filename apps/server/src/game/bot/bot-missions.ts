@@ -1,24 +1,34 @@
 import {
   type ClientGameState,
   type ClientShip,
+  type ClientPlanet,
   type PlayerInput,
   BotDifficulty,
   InputCommand,
   Team,
   ShipStatus,
   distance,
+  directionDelta,
+  armyCapacity,
   ORBIT_DIST,
   ORBIT_MAX_SPEED,
   SHIP_STATS,
   BEAM_MIN_ARMIES,
   PLANET_DEFS,
 } from "@netrek/shared";
-import { type Mission, type TakePhaseState } from "./bot-types";
+import {
+  type Mission,
+  type TakePhaseState,
+  TAKE_AVOID_DIST,
+  TAKE_CLOAK_DIST,
+  SHIELDS_DOWN_SAFE_DIST,
+} from "./bot-types";
 import {
   nearestEnemyShip,
   nearestFriendlyPlanet,
   nearestRepairPlanet,
   nearestFuelPlanet,
+  enemiesThreateningPlanet,
   directionTo,
 } from "./bot-navigation";
 
@@ -50,14 +60,18 @@ function moveTo(
   toY: number,
   speed: number,
   tick: number,
+  currentDir?: number,
 ): PlayerInput[] {
+  const targetDir = directionTo(fromX, fromY, toX, toY);
+  let finalSpeed = speed;
+  if (currentDir !== undefined) {
+    const headingErr = Math.abs(directionDelta(currentDir, targetDir));
+    if (headingErr > 64) finalSpeed = Math.min(speed, 2);
+    else if (headingErr > 32) finalSpeed = Math.min(speed, 4);
+  }
   return [
-    {
-      command: InputCommand.SET_DIRECTION,
-      value: directionTo(fromX, fromY, toX, toY),
-      tick,
-    },
-    { command: InputCommand.SET_SPEED, value: speed, tick },
+    { command: InputCommand.SET_DIRECTION, value: targetDir, tick },
+    { command: InputCommand.SET_SPEED, value: finalSpeed, tick },
   ];
 }
 
@@ -67,6 +81,7 @@ function moveToOrbit(
   planetX: number,
   planetY: number,
   tick: number,
+  currentDir?: number,
 ): PlayerInput[] {
   const dist = distance(fromX, fromY, planetX, planetY);
   if (dist <= ORBIT_DIST * 1.2) {
@@ -76,7 +91,78 @@ function moveToOrbit(
     ];
   }
   const approachSpeed = dist > ORBIT_DIST * 5 ? 6 : 3;
-  return moveTo(fromX, fromY, planetX, planetY, approachSpeed, tick);
+  return moveTo(
+    fromX,
+    fromY,
+    planetX,
+    planetY,
+    approachSpeed,
+    tick,
+    currentDir,
+  );
+}
+
+/**
+ * Potential-field steering: attraction toward target + repulsion from enemies.
+ * Produces smooth curves around enemy clusters through peaceful space.
+ */
+function moveToAvoidingEnemies(
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+  speed: number,
+  tick: number,
+  currentDir: number,
+  ships: ClientShip[],
+  team: Team,
+  slot: number,
+): PlayerInput[] {
+  const tdx = toX - fromX;
+  const tdy = toY - fromY;
+  const tDist = Math.sqrt(tdx * tdx + tdy * tdy);
+  if (tDist < 100)
+    return moveTo(fromX, fromY, toX, toY, speed, tick, currentDir);
+
+  let steerX = tdx / tDist;
+  let steerY = tdy / tDist;
+
+  for (const s of ships) {
+    if (
+      s.slotIndex === slot ||
+      s.team === team ||
+      s.status !== ShipStatus.ALIVE
+    )
+      continue;
+    const edx = fromX - s.x;
+    const edy = fromY - s.y;
+    const eDist = Math.sqrt(edx * edx + edy * edy);
+    if (eDist >= TAKE_AVOID_DIST || eDist < 1) continue;
+
+    const proximity = 1 - eDist / TAKE_AVOID_DIST;
+    const weight = proximity * proximity;
+    steerX += (edx / eDist) * weight;
+    steerY += (edy / eDist) * weight;
+  }
+
+  const mag = Math.sqrt(steerX * steerX + steerY * steerY);
+  if (mag < 0.001)
+    return moveTo(fromX, fromY, toX, toY, speed, tick, currentDir);
+
+  const rad = Math.atan2(steerX, -steerY);
+  const dir = (((rad / (2 * Math.PI)) * 256 + 256) % 256) | 0;
+
+  let finalSpeed = speed;
+  if (currentDir !== undefined) {
+    const headingErr = Math.abs(directionDelta(currentDir, dir));
+    if (headingErr > 64) finalSpeed = Math.min(speed, 2);
+    else if (headingErr > 32) finalSpeed = Math.min(speed, 4);
+  }
+
+  return [
+    { command: InputCommand.SET_DIRECTION, value: dir, tick },
+    { command: InputCommand.SET_SPEED, value: finalSpeed, tick },
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -84,8 +170,12 @@ function moveToOrbit(
 // ---------------------------------------------------------------------------
 
 export function executePatrol(ctx: MissionContext): PlayerInput[] {
-  const { myX, myY, tick, gs, slot, enemyTeam, team } = ctx;
+  const { myX, myY, tick, gs, mySelf, slot, enemyTeam, team } = ctx;
   const inputs: PlayerInput[] = [];
+
+  if (!mySelf.shieldsUp) {
+    inputs.push({ command: InputCommand.SHIELD_TOGGLE, value: 1, tick });
+  }
 
   // Head toward frontline enemy planets
   const targets: { x: number; y: number; score: number }[] = [];
@@ -112,7 +202,9 @@ export function executePatrol(ctx: MissionContext): PlayerInput[] {
 
   if (pick) {
     const speed = 5 + (slot % 2); // 5 or 6
-    inputs.push(...moveTo(myX, myY, pick.x, pick.y, speed, tick));
+    inputs.push(
+      ...moveTo(myX, myY, pick.x, pick.y, speed, tick, mySelf.direction),
+    );
     return inputs;
   }
 
@@ -129,7 +221,9 @@ export function executePatrol(ctx: MissionContext): PlayerInput[] {
     }
   }
   if (nearest) {
-    inputs.push(...moveTo(myX, myY, nearest.x, nearest.y, 6, tick));
+    inputs.push(
+      ...moveTo(myX, myY, nearest.x, nearest.y, 6, tick, mySelf.direction),
+    );
   }
 
   return inputs;
@@ -146,19 +240,23 @@ export function executeBomb(ctx: MissionContext): PlayerInput[] {
   const target = gs.planets.find((p) => p.planetId === mission.targetId);
   if (!target || target.team !== enemyTeam) return [];
 
-  // Planet already bombed down
-  if (target.armies < 1) return [];
+  if (target.armies <= 4) return [];
 
   const dist = distance(myX, myY, target.x, target.y);
   const atTarget = dist <= ORBIT_DIST * 1.2;
 
   if (mySelf.orbiting && atTarget) {
-    // Orbiting target: bomb it. DO NOT raise shields.
+    // Shields stay down while bombing (game drops them on orbit/bomb)
     if (!mySelf.bombing) {
       inputs.push({ command: InputCommand.BOMB, value: 1, tick });
+    } else {
+      inputs.push({ command: InputCommand.SET_SPEED, value: 0, tick });
     }
   } else {
-    // Navigate toward target
+    // Shields up while traveling
+    if (!mySelf.shieldsUp) {
+      inputs.push({ command: InputCommand.SHIELD_TOGGLE, value: 1, tick });
+    }
     // Veteran cloaks while approaching if fuel > 3000
     if (
       difficulty === BotDifficulty.VETERAN &&
@@ -167,7 +265,9 @@ export function executeBomb(ctx: MissionContext): PlayerInput[] {
     ) {
       inputs.push({ command: InputCommand.CLOAK_TOGGLE, value: 1, tick });
     }
-    inputs.push(...moveToOrbit(myX, myY, target.x, target.y, tick));
+    inputs.push(
+      ...moveToOrbit(myX, myY, target.x, target.y, tick, mySelf.direction),
+    );
   }
 
   return inputs;
@@ -181,81 +281,172 @@ export function executeTake(
   ctx: MissionContext,
   takeState: TakePhaseState,
 ): PlayerInput[] {
-  const { myX, myY, tick, gs, mySelf, difficulty, team, mission } = ctx;
+  const {
+    myX,
+    myY,
+    tick,
+    gs,
+    mySelf,
+    difficulty,
+    team,
+    enemyTeam,
+    slot,
+    mission,
+  } = ctx;
   const inputs: PlayerInput[] = [];
 
   const targetPlanet = gs.planets.find((p) => p.planetId === mission.targetId);
   if (!targetPlanet || targetPlanet.team === team) return [];
 
-  const stats = SHIP_STATS[mySelf.shipType];
-  const capacity = Math.min(
-    stats.maxArmies,
-    Math.floor(gs.self.kills) * stats.armiesPerKill,
-  );
+  const capacity = armyCapacity(mySelf.shipType, gs.self.kills);
 
+  // --- PICKUP: go to a friendly planet and beam up ---
   if (takeState.phase === "pickup") {
-    // Find a friendly planet with armies >= BEAM_MIN_ARMIES
     let pickup =
       takeState.pickupPlanetId >= 0
         ? gs.planets.find((p) => p.planetId === takeState.pickupPlanetId)
         : null;
-    if (!pickup || pickup.team !== team || pickup.armies < BEAM_MIN_ARMIES) {
-      const fresh = nearestFriendlyPlanet(myX, myY, team, gs.planets);
-      if (!fresh || fresh.armies < BEAM_MIN_ARMIES) return [];
-      takeState.pickupPlanetId = fresh.planetId;
-      pickup = fresh;
+
+    if (!pickup || pickup.team !== team) {
+      pickup = null;
+      takeState.pickupPlanetId = -1;
+    }
+
+    if (!pickup) {
+      const pickupMin = targetPlanet.armies + BEAM_MIN_ARMIES;
+      let bestPickup: ClientPlanet | null = null;
+      let bestArmies = 0;
+      let bestDist = Infinity;
+      for (const p of gs.planets) {
+        if (p.team !== team || p.armies < pickupMin) continue;
+        const d = distance(myX, myY, p.x, p.y);
+        if (
+          p.armies > bestArmies ||
+          (p.armies === bestArmies && d < bestDist)
+        ) {
+          bestArmies = p.armies;
+          bestDist = d;
+          bestPickup = p;
+        }
+      }
+      if (!bestPickup) {
+        let richest: ClientPlanet | null = null;
+        let richestArmies = 0;
+        for (const p of gs.planets) {
+          if (p.team !== team) continue;
+          if (p.armies > richestArmies) {
+            richestArmies = p.armies;
+            richest = p;
+          }
+        }
+        if (!richest) return [];
+        const enemy = nearestEnemyShip(
+          myX,
+          myY,
+          team,
+          slot,
+          gs.ships,
+          enemyTeam,
+        );
+        const enemyDist = enemy
+          ? distance(myX, myY, enemy.x, enemy.y)
+          : Infinity;
+        if (enemyDist < SHIELDS_DOWN_SAFE_DIST) {
+          if (!mySelf.shieldsUp) {
+            inputs.push({
+              command: InputCommand.SHIELD_TOGGLE,
+              value: 1,
+              tick,
+            });
+          }
+        } else if (mySelf.shieldsUp) {
+          inputs.push({ command: InputCommand.SHIELD_TOGGLE, value: 2, tick });
+        }
+        inputs.push(
+          ...moveTo(myX, myY, richest.x, richest.y, 6, tick, mySelf.direction),
+        );
+        return inputs;
+      }
+      takeState.pickupPlanetId = bestPickup.planetId;
+      pickup = bestPickup;
     }
 
     const distToPickup = distance(myX, myY, pickup.x, pickup.y);
-    const atPickup = distToPickup <= ORBIT_DIST * 1.2;
 
-    if (mySelf.orbiting && atPickup) {
-      // DO NOT raise shields while beaming
-      if (mySelf.beaming !== 1) {
-        inputs.push({ command: InputCommand.BEAM_UP, value: 0, tick });
-      }
-      // Check if armies loaded
-      if (
-        gs.self.armies >= capacity ||
-        gs.self.armies >= targetPlanet.armies + 1
-      ) {
+    if (mySelf.orbiting && distToPickup <= ORBIT_DIST * 1.2) {
+      const needArmies = targetPlanet.armies + 1;
+      if (gs.self.armies >= capacity || gs.self.armies >= needArmies) {
         takeState.phase = "transit";
+      } else if (pickup.armies >= BEAM_MIN_ARMIES) {
+        if (mySelf.beaming !== 1) {
+          inputs.push({ command: InputCommand.BEAM_UP, value: 0, tick });
+        } else {
+          inputs.push({ command: InputCommand.SET_SPEED, value: 0, tick });
+        }
+      } else if (gs.self.armies > 0) {
+        takeState.phase = "transit";
+      } else {
+        takeState.pickupPlanetId = -1;
+        inputs.push({ command: InputCommand.SET_SPEED, value: 0, tick });
       }
     } else {
-      inputs.push(...moveToOrbit(myX, myY, pickup.x, pickup.y, tick));
+      const enemy = nearestEnemyShip(myX, myY, team, slot, gs.ships, enemyTeam);
+      const enemyDist = enemy ? distance(myX, myY, enemy.x, enemy.y) : Infinity;
+      if (enemyDist < SHIELDS_DOWN_SAFE_DIST) {
+        if (!mySelf.shieldsUp) {
+          inputs.push({ command: InputCommand.SHIELD_TOGGLE, value: 1, tick });
+        }
+      } else if (mySelf.shieldsUp) {
+        inputs.push({ command: InputCommand.SHIELD_TOGGLE, value: 2, tick });
+      }
+      inputs.push(
+        ...moveToOrbit(myX, myY, pickup.x, pickup.y, tick, mySelf.direction),
+      );
     }
 
-    return inputs;
+    if (takeState.phase === "pickup") return inputs;
+    // Phase changed to "transit" — fall through to start moving immediately
   }
 
+  // --- TRANSIT: fly to target through peaceful space, avoiding enemies ---
   if (takeState.phase === "transit") {
-    // Navigate to target planet. Shields up. NO cloaking. Speed 6.
     if (!mySelf.shieldsUp) {
       inputs.push({ command: InputCommand.SHIELD_TOGGLE, value: 1, tick });
     }
-    inputs.push(...moveTo(myX, myY, targetPlanet.x, targetPlanet.y, 6, tick));
 
-    // Check if we're close enough to transition to approach
     const distToTarget = distance(myX, myY, targetPlanet.x, targetPlanet.y);
-    if (distToTarget <= ORBIT_DIST * 10) {
+    if (distToTarget <= TAKE_CLOAK_DIST) {
       takeState.phase = "approach";
+    } else {
+      inputs.push(
+        ...moveToAvoidingEnemies(
+          myX,
+          myY,
+          targetPlanet.x,
+          targetPlanet.y,
+          8,
+          tick,
+          mySelf.direction,
+          gs.ships,
+          team,
+          slot,
+        ),
+      );
+      return inputs;
     }
-
-    return inputs;
   }
 
-  // approach / drop phase
+  // --- APPROACH / DROP: cloak, orbit, beam down ---
   const distToTarget = distance(myX, myY, targetPlanet.x, targetPlanet.y);
 
   if (mySelf.orbiting && distToTarget <= ORBIT_DIST * 1.2) {
-    // DO NOT raise shields while beaming
     if (mySelf.beaming !== 2) {
       inputs.push({ command: InputCommand.BEAM_DOWN, value: 0, tick });
+    } else {
+      inputs.push({ command: InputCommand.SET_SPEED, value: 0, tick });
     }
-    // Mission complete when all armies dropped
     if (gs.self.armies === 0) return [];
   } else {
-    // Cloak if fuel allows
     if (
       difficulty >= BotDifficulty.COMPETENT &&
       !mySelf.cloaked &&
@@ -263,7 +454,16 @@ export function executeTake(
     ) {
       inputs.push({ command: InputCommand.CLOAK_TOGGLE, value: 1, tick });
     }
-    inputs.push(...moveToOrbit(myX, myY, targetPlanet.x, targetPlanet.y, tick));
+    inputs.push(
+      ...moveToOrbit(
+        myX,
+        myY,
+        targetPlanet.x,
+        targetPlanet.y,
+        tick,
+        mySelf.direction,
+      ),
+    );
   }
 
   return inputs;
@@ -321,7 +521,9 @@ export function executeDefend(ctx: MissionContext): PlayerInput[] {
   const planet = gs.planets.find((p) => p.planetId === mission.targetId);
   if (!planet || planet.team !== team) return [];
 
-  // Shields up
+  const threats = enemiesThreateningPlanet(planet, gs.ships, team, 10000);
+  if (threats === 0) return [];
+
   if (!mySelf.shieldsUp) {
     inputs.push({ command: InputCommand.SHIELD_TOGGLE, value: 1, tick });
   }
@@ -329,10 +531,10 @@ export function executeDefend(ctx: MissionContext): PlayerInput[] {
   const dist = distance(myX, myY, planet.x, planet.y);
 
   if (dist > ORBIT_DIST * 3) {
-    // Navigate to planet
-    inputs.push(...moveTo(myX, myY, planet.x, planet.y, 6, tick));
+    inputs.push(
+      ...moveTo(myX, myY, planet.x, planet.y, 6, tick, mySelf.direction),
+    );
   } else {
-    // Near planet: orbit or patrol nearby at low speed
     inputs.push({ command: InputCommand.SET_SPEED, value: 3, tick });
     if (!mySelf.orbiting) {
       inputs.push(...moveToOrbit(myX, myY, planet.x, planet.y, tick));
@@ -349,6 +551,10 @@ export function executeDefend(ctx: MissionContext): PlayerInput[] {
 export function executeOgg(ctx: MissionContext): PlayerInput[] {
   const { myX, myY, tick, gs, mySelf, difficulty, mission } = ctx;
   const inputs: PlayerInput[] = [];
+
+  if (!mySelf.shieldsUp) {
+    inputs.push({ command: InputCommand.SHIELD_TOGGLE, value: 1, tick });
+  }
 
   const target = gs.ships.find(
     (s) => s.slotIndex === mission.targetId && s.status === ShipStatus.ALIVE,
@@ -411,60 +617,95 @@ export function executeResupply(ctx: MissionContext): PlayerInput[] {
   const hullDamagePct = mySelf.hullDamagePct * 100; // 0-100
   const fuelPct = mySelf.fuelPct;
 
-  // Check if resupply is complete
-  if (hullDamagePct < 10 && fuelPct > 0.7) return [];
+  if (hullDamagePct < 15 && fuelPct > 0.5) return [];
 
-  // Check for nearby enemies
   const enemy = nearestEnemyShip(myX, myY, team, slot, gs.ships, enemyTeam);
   const enemyDist = enemy ? distance(myX, myY, enemy.x, enemy.y) : Infinity;
   const enemiesNearby = enemyDist < 10000;
 
-  // If fuel is low, head to nearest fuel planet
-  if (fuelPct < 0.3) {
-    const fuelPlanet = nearestFuelPlanet(myX, myY, team, gs.planets);
-    if (fuelPlanet) {
-      if (!mySelf.shieldsUp && enemiesNearby) {
-        inputs.push({ command: InputCommand.SHIELD_TOGGLE, value: 1, tick });
-      }
-      inputs.push(...moveTo(myX, myY, fuelPlanet.x, fuelPlanet.y, 6, tick));
-      return inputs;
-    }
-  }
-
-  // If repair planet is close and badly damaged, head there
-  if (hullDamagePct > 50) {
-    const repairPlanet = nearestRepairPlanet(myX, myY, team, gs.planets);
-    if (repairPlanet) {
-      const distToRepair = distance(myX, myY, repairPlanet.x, repairPlanet.y);
-      if (distToRepair < 15000) {
-        inputs.push(
-          ...moveTo(myX, myY, repairPlanet.x, repairPlanet.y, 6, tick),
-        );
-        return inputs;
-      }
-    }
-  }
-
+  // Enemies nearby: shields up, flee toward friendly space
   if (enemiesNearby) {
-    // Passive repair: shields down, keep moving toward safe space
-    if (mySelf.shieldsUp) {
-      // Keep shields up with enemies nearby for safety
+    if (mySelf.repairMode) {
+      inputs.push({ command: InputCommand.REPAIR_TOGGLE, value: 1, tick });
     }
-    // Move away from enemies
+    if (!mySelf.shieldsUp) {
+      inputs.push({ command: InputCommand.SHIELD_TOGGLE, value: 1, tick });
+    }
     const safePlanet = nearestFriendlyPlanet(myX, myY, team, gs.planets);
     if (safePlanet) {
-      inputs.push(...moveTo(myX, myY, safePlanet.x, safePlanet.y, 6, tick));
+      inputs.push(
+        ...moveTo(
+          myX,
+          myY,
+          safePlanet.x,
+          safePlanet.y,
+          6,
+          tick,
+          mySelf.direction,
+        ),
+      );
     } else {
       inputs.push({ command: InputCommand.SET_SPEED, value: 6, tick });
     }
-  } else {
-    // No enemies: active repair
-    if (hullDamagePct > 30) {
-      if (!mySelf.repairMode) {
-        inputs.push({ command: InputCommand.REPAIR_TOGGLE, value: 1, tick });
-      }
-      inputs.push({ command: InputCommand.SET_SPEED, value: 0, tick });
+    return inputs;
+  }
+
+  // No enemies nearby — shields down for hull repair
+  if (mySelf.shieldsUp) {
+    inputs.push({ command: InputCommand.SHIELD_TOGGLE, value: 2, tick });
+  }
+
+  // Fuel critical: head to fuel planet or nearest friendly to orbit
+  if (fuelPct < 0.3) {
+    const fuelPlanet = nearestFuelPlanet(myX, myY, team, gs.planets);
+    const target =
+      fuelPlanet ?? nearestFriendlyPlanet(myX, myY, team, gs.planets);
+    if (target) {
+      inputs.push(
+        ...moveToOrbit(myX, myY, target.x, target.y, tick, mySelf.direction),
+      );
     }
+    return inputs;
+  }
+
+  // Hull repair decision: planet vs repair-in-place
+  if (hullDamagePct > 15) {
+    const repairPlanet = nearestRepairPlanet(myX, myY, team, gs.planets);
+    const distToRepair = repairPlanet
+      ? distance(myX, myY, repairPlanet.x, repairPlanet.y)
+      : Infinity;
+
+    // Go to repair planet only if close enough to be worth the travel
+    if (distToRepair < 10000) {
+      inputs.push(
+        ...moveToOrbit(
+          myX,
+          myY,
+          repairPlanet!.x,
+          repairPlanet!.y,
+          tick,
+          mySelf.direction,
+        ),
+      );
+      return inputs;
+    }
+
+    // Otherwise: active repair in place (R mode, stop dead)
+    if (!mySelf.repairMode) {
+      inputs.push({ command: InputCommand.REPAIR_TOGGLE, value: 1, tick });
+    }
+    inputs.push({ command: InputCommand.SET_SPEED, value: 0, tick });
+    return inputs;
+  }
+
+  // Just need fuel — head to nearest friendly planet
+  const fuelPlanet = nearestFuelPlanet(myX, myY, team, gs.planets);
+  const target =
+    fuelPlanet ?? nearestFriendlyPlanet(myX, myY, team, gs.planets);
+  if (target) {
+    inputs.push(
+      ...moveToOrbit(myX, myY, target.x, target.y, tick, mySelf.direction),
+    );
   }
 
   return inputs;

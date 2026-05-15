@@ -7,6 +7,7 @@ import {
   GALAXY_WIDTH,
   GALAXY_HEIGHT,
   SHIP_STATS,
+  armyCapacity,
   PLANET_RADIUS_GU,
   TEAM_NEUTRAL,
   type ClientGameState,
@@ -281,20 +282,23 @@ function drawShip(ctx: CanvasRenderingContext2D, ship: ClientShip): void {
     return;
   }
 
-  // Draw ship bitmap sprite (pre-rotated, 16 views)
-  const sprite = getShipSprite(ship.team, ship.shipType, ship.direction);
+  // Draw ship bitmap sprite (view 0 = up, canvas-rotated to direction)
+  const sprite = getShipSprite(ship.team, ship.shipType, 0);
   if (sprite) {
-    const spriteSize = shipPx * 2; // shipPx is half-size, sprite needs full size
-    const smoothing = ctx.imageSmoothingEnabled;
+    const spriteSize = shipPx * 2;
+    const angle = (ship.direction / 256) * Math.PI * 2;
+    ctx.save();
     ctx.imageSmoothingEnabled = false;
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
     ctx.drawImage(
       sprite,
-      Math.round(cx - spriteSize / 2),
-      Math.round(cy - spriteSize / 2),
+      Math.round(-spriteSize / 2),
+      Math.round(-spriteSize / 2),
       Math.round(spriteSize),
       Math.round(spriteSize),
     );
-    ctx.imageSmoothingEnabled = smoothing;
+    ctx.restore();
   }
 
   // Shield circle
@@ -883,8 +887,11 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: ClientGameState): void {
   ctx.lineWidth = 2;
   ctx.strokeRect(1, 1, w - 2, h - 2);
 
+  // Scale HUD to fit canvas width (reference width = 650px)
+  const hudScale = Math.min(1, w / 650);
+
   // Dashboard background — 3 rows
-  const dashH = 52;
+  const dashH = Math.round(52 * hudScale);
   const dashY = h - dashH;
   ctx.fillStyle = "#000000";
   ctx.fillRect(0, dashY, w, dashH);
@@ -895,13 +902,14 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: ClientGameState): void {
   ctx.lineTo(w, dashY);
   ctx.stroke();
 
-  const font = "12px monospace";
+  const fontSize = Math.max(8, Math.round(12 * hudScale));
+  const font = `${fontSize}px monospace`;
   ctx.font = font;
-  const lineH = 16;
-  const charW = 7.2; // approximate monospace char width at 12px
-  const pad = 6;
-  const barH = 10;
-  const barW = 60; // shorter bars to fit grid layout
+  const lineH = Math.round(16 * hudScale);
+  const charW = 7.2 * hudScale;
+  const pad = Math.round(6 * hudScale);
+  const barH = Math.round(10 * hudScale);
+  const barW = Math.round(60 * hudScale);
   const flash = Math.floor(performance.now() / 250) % 2 === 0;
 
   // Compute raw values from percentages + ship stats
@@ -966,15 +974,12 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: ClientGameState): void {
 
   // Armies with bar (absolute range 0-25, tick at kill-based capacity)
   const ABS_MAX_ARMIES = 25;
-  const armyCapacity = Math.min(
-    stats.maxArmies,
-    Math.floor(self.kills * stats.armiesPerKill),
-  );
-  const arStr = `Ar[${padNum(self.armies, 2)}/${padNum(armyCapacity, 2)}]`;
+  const armyCap = armyCapacity(myShip.shipType, self.kills);
+  const arStr = `Ar[${padNum(self.armies, 2)}/${padNum(armyCap, 2)}]`;
   ctx.fillStyle = "#ffffff";
   ctx.fillText(arStr, col3after, y + barH);
   bx = col3after + charW * arStr.length;
-  const arPct = armyCapacity > 0 ? self.armies / ABS_MAX_ARMIES : 0;
+  const arPct = armyCap > 0 ? self.armies / ABS_MAX_ARMIES : 0;
   drawInlineBar(
     ctx,
     bx,
@@ -983,7 +988,7 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: ClientGameState): void {
     barH,
     arPct,
     "#44ff44",
-    armyCapacity / ABS_MAX_ARMIES,
+    armyCap / ABS_MAX_ARMIES,
   );
 
   // Fuel with bar
@@ -996,7 +1001,7 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: ClientGameState): void {
     ctx,
     bx,
     y + 1,
-    barW + 40,
+    barW + Math.round(40 * hudScale),
     barH,
     myShip.fuelPct,
     barColor(1 - myShip.fuelPct),
@@ -1127,7 +1132,8 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: ClientGameState): void {
     ctx.textAlign = "start";
   }
 
-  // Genocide / surrender timer
+  // Surrender timers
+  const timerY = self.tmode ? 34 : 16;
   if (self.surrenderTimer > 0) {
     const totalSec = Math.ceil(self.surrenderTimer / 10);
     const min = Math.floor(totalSec / 60);
@@ -1139,7 +1145,20 @@ function drawHUD(ctx: CanvasRenderingContext2D, state: ClientGameState): void {
     ctx.fillText(
       `SURRENDER IN ${min}:${String(sec).padStart(2, "0")}`,
       w / 2,
-      self.tmode ? 34 : 16,
+      timerY,
+    );
+    ctx.textAlign = "start";
+  } else if (self.enemySurrenderTimer > 0) {
+    const totalSec = Math.ceil(self.enemySurrenderTimer / 10);
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    ctx.fillStyle = "#ffcc00";
+    ctx.font = "16px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(
+      `ENEMY SURRENDERS IN ${min}:${String(sec).padStart(2, "0")}`,
+      w / 2,
+      timerY,
     );
     ctx.textAlign = "start";
   }

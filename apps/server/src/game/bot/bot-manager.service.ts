@@ -10,12 +10,14 @@ import {
   type ChatMessage,
   type AlertStatus,
   PLANET_DEFS,
+  SHIP_STATS,
 } from "@netrek/shared";
 import { BotPlayer } from "./bot-player";
-import { type TeamBotState } from "./bot-types";
+import { type TeamBotState, MissionType } from "./bot-types";
 import { BotNamePool } from "./bot-names";
 import { BotConfig, loadBotConfig, buildDifficultyList } from "./bot-config";
 import { parseOrder } from "./bot-orders";
+import { botFileLog } from "./bot-logger";
 import { GameState } from "../state/game-state";
 import { InputQueue } from "../state/input-queue";
 
@@ -331,6 +333,39 @@ export class BotManagerService {
     }
 
     this.checkDifficultyRebalance(tick);
+    this.logBotSummary(tick);
+  }
+
+  private static readonly MISSION_LABELS: Record<number, string> = {
+    [MissionType.PATROL]: "PTL",
+    [MissionType.BOMB]: "BMB",
+    [MissionType.TAKE]: "TAK",
+    [MissionType.ESCORT]: "ESC",
+    [MissionType.DEFEND]: "DEF",
+    [MissionType.OGG]: "OGG",
+    [MissionType.RESUPPLY]: "RSP",
+  };
+
+  private logBotSummary(tick: number): void {
+    if (tick % 50 !== 0) return;
+    const lines: string[] = [];
+    for (const [slot, bot] of this.bots) {
+      const ship = this.gameState.ships[slot];
+      if (!ship || ship.status !== ShipStatus.ALIVE) continue;
+      const m = bot.brain.currentMission;
+      const label = BotManagerService.MISSION_LABELS[m] ?? String(m);
+      const tid = bot.brain.currentMissionTargetId;
+      const tStr = tid >= 0 ? `→${tid}` : "";
+      const pos = `(${Math.round(ship.x)},${Math.round(ship.y)})`;
+      const hp = `${(100 - (ship.hullDamage / (SHIP_STATS[ship.shipType]?.maxHull ?? 100)) * 100).toFixed(0)}%hp`;
+      const fuel = `${((ship.fuel / (SHIP_STATS[ship.shipType]?.maxFuel ?? 10000)) * 100).toFixed(0)}%f`;
+      lines.push(`${bot.name}:${label}${tStr} ${pos} ${hp} ${fuel}`);
+    }
+    if (lines.length > 0) {
+      const summary = `t=${tick} | ${lines.join(" | ")}`;
+      this.logger.debug(summary);
+      botFileLog(summary);
+    }
   }
 
   // ---------------------------------------------------------------------------
