@@ -1,7 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { ShipType, Team, InputCommand } from "@netrek/shared";
+import {
+  ShipType,
+  Team,
+  InputCommand,
+  REFIT_MIN_SHIELD_PCT,
+  REFIT_MIN_FUEL_PCT,
+  REFIT_MAX_HULL_PCT,
+  REFIT_TICKS,
+} from "@netrek/shared";
 import {
   connect,
   disconnect,
@@ -71,6 +79,9 @@ const TEAM_NAMES: Record<number, string> = {
 /** Bottom panel height in pixels */
 const BOTTOM_PANEL_H = 280;
 
+/** Below this width, switch to stacked (narrow) layout */
+const BREAKPOINT = 640;
+
 interface GameCanvasProps {
   wsUrl: string;
   gameToken: string;
@@ -98,6 +109,17 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
     losingTeam: number;
     type: string;
   } | null>(null);
+  const [isNarrow, setIsNarrow] = useState(
+    () => typeof window !== "undefined" && window.innerWidth < BREAKPOINT,
+  );
+  const [refitError, setRefitError] = useState<string | null>(null);
+  const [refitInProgress, setRefitInProgress] = useState<{
+    targetType: number;
+    startTick: number;
+  } | null>(null);
+  const refitRef = useRef<{ targetType: number; startTick: number } | null>(
+    null,
+  );
 
   const handleResize = useCallback(() => {
     const canvas = canvasRef.current;
@@ -106,17 +128,26 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
 
     const totalW = window.innerWidth;
     const totalH = window.innerHeight;
-    const topH = totalH - BOTTOM_PANEL_H;
-    const halfW = Math.round(totalW / 2);
+    const narrow = totalW < BREAKPOINT;
+    setIsNarrow(narrow);
 
-    canvas.width = halfW;
-    canvas.height = topH;
-
-    if (galCanvas) {
-      // Galaxy map is square, fits in the right half
-      const galSize = Math.min(halfW, topH);
-      galCanvas.width = galSize;
-      galCanvas.height = galSize;
+    if (narrow) {
+      canvas.width = totalW;
+      canvas.height = totalW;
+      if (galCanvas) {
+        galCanvas.width = totalW;
+        galCanvas.height = totalW;
+      }
+    } else {
+      const topH = totalH - BOTTOM_PANEL_H;
+      const halfW = Math.round(totalW / 2);
+      canvas.width = halfW;
+      canvas.height = topH;
+      if (galCanvas) {
+        const galSize = Math.min(halfW, topH);
+        galCanvas.width = galSize;
+        galCanvas.height = galSize;
+      }
     }
   }, []);
 
@@ -147,6 +178,10 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
       if (getMySlot() >= 0) {
         const myShip = state.ships.find((s) => s.slotIndex === getMySlot());
         if (!myShip || myShip.status === 2) {
+          if (refitRef.current) {
+            refitRef.current = null;
+            setRefitInProgress(null);
+          }
           if (Date.now() - respawnedAt.current > 2000) {
             setPhase((prev) => {
               if (prev !== "dead") {
@@ -158,6 +193,18 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
           }
         } else {
           setPhase("playing");
+          if (refitRef.current) {
+            const elapsed = state.tick - refitRef.current.startTick;
+            if (myShip.shipType === refitRef.current.targetType) {
+              refitRef.current = null;
+              setRefitInProgress(null);
+            } else if (elapsed > REFIT_TICKS + 10) {
+              refitRef.current = null;
+              setRefitInProgress(null);
+            } else {
+              setChatVersion((v) => v + 1);
+            }
+          }
         }
       }
     });
@@ -211,7 +258,10 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
       const myShip = snap.ships.find((s) => s.slotIndex === getMySlot());
       if (!myShip) return;
       const homeworldIdx = myShip.team * 10;
-      if (snap.self.orbitPlanetId !== homeworldIdx) return;
+      const atHomeworld = snap.self.orbitPlanetId === homeworldIdx;
+      const dockedAtSb = myShip.docked;
+      if (!atHomeworld && !dockedAtSb) return;
+      setRefitError(null);
       setShowRefit((v) => !v);
     });
 
@@ -273,15 +323,31 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
         background: "#000",
         display: "flex",
         flexDirection: "column",
+        overflow: isNarrow ? "auto" : undefined,
       }}
     >
-      {/* Top area: tactical (left) + galaxy map & info (right) */}
-      <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-        {/* Left: Tactical view */}
-        <div style={{ flex: 1, position: "relative", cursor: "crosshair" }}>
+      {/* Top area: tactical (left) + galaxy map (right in wide, below in narrow) */}
+      <div
+        style={
+          isNarrow ? undefined : { flex: 1, display: "flex", minHeight: 0 }
+        }
+      >
+        {/* Tactical view */}
+        <div
+          style={{
+            position: "relative",
+            cursor: "crosshair",
+            ...(!isNarrow && { flex: 1, minWidth: 0 }),
+          }}
+        >
           <canvas
             ref={canvasRef}
-            style={{ width: "100%", height: "100%", display: "block" }}
+            style={{
+              display: "block",
+              width: "100%",
+              height: isNarrow ? "auto" : "100%",
+              ...(isNarrow && { aspectRatio: "1 / 1" }),
+            }}
           />
 
           {/* Connection overlay */}
@@ -509,8 +575,40 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
                     <button
                       key={ship.type}
                       onClick={() => {
+                        const snap = getLatestSnapshot();
+                        if (!snap) return;
+                        const me = snap.ships.find(
+                          (s) => s.slotIndex === getMySlot(),
+                        );
+                        if (!me) return;
+                        if (me.shieldPct < REFIT_MIN_SHIELD_PCT) {
+                          setRefitError("Shields too low (need 75%+)");
+                          return;
+                        }
+                        if (me.fuelPct < REFIT_MIN_FUEL_PCT) {
+                          setRefitError("Fuel too low (need 75%+)");
+                          return;
+                        }
+                        if (me.hullDamagePct > REFIT_MAX_HULL_PCT) {
+                          setRefitError("Hull too damaged (max 75% damage)");
+                          return;
+                        }
+                        if (snap.self.armies > 0) {
+                          setRefitError("Must drop armies first");
+                          return;
+                        }
+                        setRefitError(null);
                         sendInput(InputCommand.REFIT, ship.type);
                         setShowRefit(false);
+                        const tick = getLatestSnapshot()?.tick ?? 0;
+                        refitRef.current = {
+                          targetType: ship.type,
+                          startTick: tick,
+                        };
+                        setRefitInProgress({
+                          targetType: ship.type,
+                          startTick: tick,
+                        });
                       }}
                       style={{
                         background: "#222",
@@ -537,8 +635,47 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
                 >
                   Press r to cancel
                 </p>
+                {refitError && (
+                  <p
+                    style={{
+                      color: "#ff4444",
+                      fontFamily: "monospace",
+                      fontSize: 12,
+                      marginTop: 8,
+                    }}
+                  >
+                    {refitError}
+                  </p>
+                )}
               </div>
             </Overlay>
+          )}
+
+          {/* Refit countdown message */}
+          {refitInProgress && !showRefit && (
+            <div
+              style={{
+                position: "absolute",
+                top: "40%",
+                left: "50%",
+                transform: "translate(-50%, -50%)",
+                fontFamily: "monospace",
+                fontSize: 16,
+                color: "#ffff00",
+                textAlign: "center",
+                pointerEvents: "none",
+                zIndex: 15,
+                textShadow: "0 0 6px #000, 0 0 12px #000",
+              }}
+            >
+              <RefitCountdown
+                startTick={refitInProgress.startTick}
+                targetName={
+                  SHIPS.find((s) => s.type === refitInProgress.targetType)
+                    ?.name ?? "new ship"
+                }
+              />
+            </div>
           )}
 
           {/* Game win/loss overlay */}
@@ -578,41 +715,71 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
           )}
         </div>
 
-        {/* Right: Galaxy map + player list */}
+        {/* Galaxy map */}
         <div
           style={{
-            width: "50%",
             display: "flex",
             flexDirection: "column",
-            borderLeft: "1px solid #333",
             background: "#000008",
+            overflow: "hidden",
+            ...(isNarrow
+              ? { borderTop: "1px solid #333", alignItems: "center" }
+              : {
+                  width: "50%",
+                  minHeight: 0,
+                  alignItems: "flex-start",
+                  borderLeft: "1px solid #333",
+                }),
           }}
         >
-          {/* Galaxy map canvas */}
-          <canvas
-            ref={galCanvasRef}
-            style={{
-              display: "block",
-              maxWidth: "100%",
-              maxHeight: `calc(100vh - ${BOTTOM_PANEL_H}px)`,
-              aspectRatio: "1",
-            }}
-          />
+          <canvas ref={galCanvasRef} style={{ display: "block" }} />
         </div>
       </div>
 
-      {/* Bottom panel: player list (left) + chat (right) */}
-      <div
-        style={{
-          height: BOTTOM_PANEL_H,
-          borderTop: "1px solid #333",
-          background: "#000000",
-          display: "flex",
-        }}
-      >
-        <PlayerListPanel state={snapshot} rosterVersion={chatVersion} />
-        <ChatPanel chatVersion={chatVersion} />
-      </div>
+      {/* Bottom panels */}
+      {isNarrow ? (
+        <>
+          <div
+            style={{
+              borderTop: "1px solid #333",
+              height: 250,
+              display: "flex",
+            }}
+          >
+            <ChatPanel chatVersion={chatVersion} />
+          </div>
+          <div
+            style={{
+              borderTop: "1px solid #333",
+              height: 250,
+              display: "flex",
+            }}
+          >
+            <PlayerListPanel state={snapshot} rosterVersion={chatVersion} />
+          </div>
+        </>
+      ) : (
+        <div
+          style={{
+            height: BOTTOM_PANEL_H,
+            borderTop: "1px solid #333",
+            background: "#000000",
+            display: "flex",
+          }}
+        >
+          <PlayerListPanel state={snapshot} rosterVersion={chatVersion} />
+          <div
+            style={{
+              borderLeft: "1px solid #333",
+              display: "flex",
+              flex: 1,
+              minWidth: 0,
+            }}
+          >
+            <ChatPanel chatVersion={chatVersion} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -720,6 +887,24 @@ function InfoPanel({
         </div>
       )}
     </div>
+  );
+}
+
+function RefitCountdown({
+  startTick,
+  targetName,
+}: {
+  startTick: number;
+  targetName: string;
+}) {
+  const snap = getLatestSnapshot();
+  const elapsed = snap ? snap.tick - startTick : 0;
+  const remaining = Math.max(0, REFIT_TICKS - elapsed);
+  const secs = Math.ceil(remaining / 10);
+  return (
+    <p>
+      Transporting to your {targetName}... {secs}
+    </p>
   );
 }
 

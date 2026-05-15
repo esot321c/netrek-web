@@ -11,6 +11,8 @@ import {
   enemyCarriers,
   friendlyBombers,
   directionTo,
+  enemiesThreateningPlanet,
+  friendlyCarriers,
 } from "./bot-navigation";
 import {
   ShipStatus,
@@ -548,6 +550,116 @@ describe("friendlyBombers", () => {
       bombing: true,
     });
     expect(friendlyBombers(Team.FEDERATION, 0, [enemyBomber])).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// enemiesThreateningPlanet
+// ---------------------------------------------------------------------------
+
+describe("enemiesThreateningPlanet", () => {
+  it("counts enemies within range of a planet", () => {
+    const ships = [
+      makeShip({
+        slotIndex: 0,
+        team: Team.ROMULANS,
+        x: 20500,
+        y: 80000,
+        status: ShipStatus.ALIVE,
+      }),
+      makeShip({
+        slotIndex: 1,
+        team: Team.ROMULANS,
+        x: 50000,
+        y: 50000,
+        status: ShipStatus.ALIVE,
+      }),
+    ];
+    const planet = { x: 20000, y: 80000 };
+    expect(enemiesThreateningPlanet(planet, ships, Team.FEDERATION, 8000)).toBe(
+      1,
+    );
+  });
+
+  it("excludes friendly ships", () => {
+    const ships = [
+      makeShip({
+        slotIndex: 0,
+        team: Team.FEDERATION,
+        x: 20500,
+        y: 80000,
+        status: ShipStatus.ALIVE,
+      }),
+    ];
+    const planet = { x: 20000, y: 80000 };
+    expect(enemiesThreateningPlanet(planet, ships, Team.FEDERATION, 8000)).toBe(
+      0,
+    );
+  });
+
+  it("excludes dead ships", () => {
+    const ships = [
+      makeShip({
+        slotIndex: 0,
+        team: Team.ROMULANS,
+        x: 20500,
+        y: 80000,
+        status: ShipStatus.DEAD,
+      }),
+    ];
+    const planet = { x: 20000, y: 80000 };
+    expect(enemiesThreateningPlanet(planet, ships, Team.FEDERATION, 8000)).toBe(
+      0,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// friendlyCarriers
+// ---------------------------------------------------------------------------
+
+describe("friendlyCarriers", () => {
+  it("finds teammates beaming down", () => {
+    const ships = [
+      makeShip({
+        slotIndex: 0,
+        team: Team.FEDERATION,
+        beaming: 2,
+        status: ShipStatus.ALIVE,
+      }),
+      makeShip({
+        slotIndex: 1,
+        team: Team.FEDERATION,
+        beaming: 0,
+        status: ShipStatus.ALIVE,
+      }),
+    ];
+    expect(friendlyCarriers(Team.FEDERATION, 2, ships).length).toBe(1);
+  });
+
+  it("finds assault ships regardless of beaming", () => {
+    const ships = [
+      makeShip({
+        slotIndex: 0,
+        team: Team.FEDERATION,
+        shipType: ShipType.AS,
+        beaming: 0,
+        status: ShipStatus.ALIVE,
+      }),
+    ];
+    expect(friendlyCarriers(Team.FEDERATION, 2, ships).length).toBe(1);
+  });
+
+  it("excludes self", () => {
+    const ships = [
+      makeShip({
+        slotIndex: 2,
+        team: Team.FEDERATION,
+        beaming: 2,
+        status: ShipStatus.ALIVE,
+      }),
+    ];
+    expect(friendlyCarriers(Team.FEDERATION, 2, ships).length).toBe(0);
   });
 });
 

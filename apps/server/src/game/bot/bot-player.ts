@@ -7,13 +7,13 @@ import {
   type ShipState,
   type TorpState,
   BotDifficulty,
-  BotRole,
   Team,
   ShipType,
   serializeGameState,
   deserializeGameState,
 } from "@netrek/shared";
 import { BotBrain } from "./bot-ai";
+import { type TeamBotState } from "./bot-types";
 import { InputQueue } from "../state/input-queue";
 
 export class BotPlayer {
@@ -27,16 +27,16 @@ export class BotPlayer {
     readonly team: Team,
     name: string,
     shipType?: ShipType,
-    role: BotRole = BotRole.AGGRESSOR,
   ) {
     this.name = name;
     this.shipType = shipType ?? ShipType.CA;
-    this.brain = new BotBrain(difficulty, team, -1, role);
+    this.brain = new BotBrain(difficulty, team, -1);
   }
 
   assignSlot(slot: number): void {
     this.slot = slot;
     this.brain.slot = slot;
+    this.brain.name = this.name;
   }
 
   onTick(
@@ -58,6 +58,7 @@ export class BotPlayer {
       lastScannedTick: number;
     }[],
     currentTick = 0,
+    teamBots?: TeamBotState[],
   ): void {
     if (this.slot === -1) return;
 
@@ -79,7 +80,7 @@ export class BotPlayer {
     );
 
     const gameState = deserializeGameState(buf);
-    const commands = this.brain.think(gameState);
+    const commands = this.brain.think(gameState, teamBots ?? []);
 
     for (const cmd of commands) {
       inputQueue.enqueue(this.slot, cmd);

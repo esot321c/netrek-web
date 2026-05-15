@@ -213,6 +213,39 @@ export function enemyCarriers(
   return result;
 }
 
+/** Count alive enemy ships within range of a planet position. */
+export function enemiesThreateningPlanet(
+  planet: { x: number; y: number },
+  ships: ClientShip[],
+  myTeam: Team,
+  range: number,
+): number {
+  let count = 0;
+  for (const s of ships) {
+    if (s.team === myTeam) continue;
+    if (s.status !== ShipStatus.ALIVE) continue;
+    if (distance(s.x, s.y, planet.x, planet.y) <= range) count++;
+  }
+  return count;
+}
+
+/** Find friendly ships (not self) that appear to be carrying armies. */
+export function friendlyCarriers(
+  myTeam: Team,
+  mySlot: number,
+  ships: ClientShip[],
+): ClientShip[] {
+  const result: ClientShip[] = [];
+  for (const s of ships) {
+    if (s.slotIndex === mySlot || s.team !== myTeam) continue;
+    if (s.status !== ShipStatus.ALIVE) continue;
+    if (s.beaming === 2 || s.shipType === ShipType.AS) {
+      result.push(s);
+    }
+  }
+  return result;
+}
+
 /** Find friendly ships (not self) that are currently bombing. */
 export function friendlyBombers(
   myTeam: Team,

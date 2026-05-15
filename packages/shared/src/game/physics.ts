@@ -86,6 +86,13 @@ export function turnRate(shipType: ShipType, speed: number): number {
   return Math.max(1, Math.floor(base / (speed + 1)));
 }
 
+/** Army carry capacity. Starbases (armiesPerKill=0) always have full capacity. */
+export function armyCapacity(shipType: ShipType, kills: number): number {
+  const stats = SHIP_STATS[shipType];
+  if (stats.armiesPerKill <= 0) return stats.maxArmies;
+  return Math.min(stats.maxArmies, Math.floor(kills * stats.armiesPerKill));
+}
+
 /** Max warp speed given hull damage. */
 export function maxWarpForHull(shipType: ShipType, hullDamage: number): number {
   const stats = SHIP_STATS[shipType];
@@ -315,9 +322,11 @@ export function updateFuel(ship: ShipState): void {
 }
 
 /** Update shield and hull repair for one tick. Rates are in thousandths of max. */
-export function updateRepair(ship: ShipState): void {
+export function updateRepair(ship: ShipState, orbitRepairPlanet = false): void {
   const stats = SHIP_STATS[ship.shipType];
-  const multiplier = ship.repairMode ? 4 : 2;
+  let multiplier = 1;
+  if (orbitRepairPlanet) multiplier = 4;
+  else if (ship.repairMode) multiplier = 2;
 
   // Shield repair — always active
   if (ship.shieldStrength < stats.maxShields) {

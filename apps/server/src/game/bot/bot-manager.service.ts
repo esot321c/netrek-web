@@ -6,16 +6,18 @@ import {
   ShipType,
   ShipStatus,
   BotDifficulty,
-  BotRole,
   type ShipState,
   type ChatMessage,
   type AlertStatus,
   PLANET_DEFS,
+  SHIP_STATS,
 } from "@netrek/shared";
 import { BotPlayer } from "./bot-player";
+import { type TeamBotState, MissionType } from "./bot-types";
 import { BotNamePool } from "./bot-names";
 import { BotConfig, loadBotConfig, buildDifficultyList } from "./bot-config";
 import { parseOrder } from "./bot-orders";
+import { botFileLog } from "./bot-logger";
 import { GameState } from "../state/game-state";
 import { InputQueue } from "../state/input-queue";
 
@@ -26,7 +28,6 @@ const SHIP_TYPES_FOR_BOTS: ShipType[] = [
   ShipType.DD,
   ShipType.CA,
   ShipType.BB,
-  ShipType.AS,
 ];
 
 /** Homeworld indices in PLANET_DEFS (first planet of each team's 10) */
@@ -97,13 +98,9 @@ export class BotManagerService {
       this.config.botsPerTeam,
     );
 
-    // Assign roles: 2 aggressors, 1 defender, 1 hunter (for 4 bots)
-    // For other counts, cycle through roles
-    const roles = this.buildRoleList(this.config.botsPerTeam);
-
     for (const team of [Team.FEDERATION, Team.ROMULANS]) {
-      for (let i = 0; i < difficulties.length; i++) {
-        this.spawnBot(team, difficulties[i]!, undefined, roles[i]);
+      for (const difficulty of difficulties) {
+        this.spawnBot(team, difficulty);
       }
     }
 
@@ -112,21 +109,10 @@ export class BotManagerService {
     );
   }
 
-  private buildRoleList(count: number): BotRole[] {
-    const roles: BotRole[] = [];
-    for (let i = 0; i < count; i++) {
-      if (i === 0) roles.push(BotRole.DEFENDER);
-      else if (i % 3 === 2) roles.push(BotRole.HUNTER);
-      else roles.push(BotRole.AGGRESSOR);
-    }
-    return roles;
-  }
-
   private spawnBot(
     team: Team,
     difficulty: BotDifficulty,
     shipType?: ShipType,
-    role?: BotRole,
   ): BotPlayer | null {
     const slot = this.gameState.findEmptySlot();
     if (slot === -1) {
@@ -141,15 +127,7 @@ export class BotManagerService {
         Math.floor(Math.random() * SHIP_TYPES_FOR_BOTS.length)
       ]!;
 
-    const resolvedRole = role ?? this.pickRoleForTeam(team);
-
-    const bot = new BotPlayer(
-      difficulty,
-      team,
-      name,
-      resolvedShipType,
-      resolvedRole,
-    );
+    const bot = new BotPlayer(difficulty, team, name, resolvedShipType);
     bot.assignSlot(slot);
 
     const spawn = this.spawnPoint(team);
@@ -183,19 +161,6 @@ export class BotManagerService {
     this.broadcastService.broadcastRoster();
 
     this.logger.debug(`Removed bot ${bot.name} from slot ${slot}`);
-  }
-
-  private pickRoleForTeam(team: Team): BotRole {
-    let defenders = 0;
-    let hunters = 0;
-    for (const [, bot] of this.bots) {
-      if (bot.team !== team) continue;
-      if (bot.brain.role === BotRole.DEFENDER) defenders++;
-      if (bot.brain.role === BotRole.HUNTER) hunters++;
-    }
-    if (defenders === 0) return BotRole.DEFENDER;
-    if (hunters === 0) return BotRole.HUNTER;
-    return BotRole.AGGRESSOR;
   }
 
   private spawnPoint(team: Team): { x: number; y: number } {
@@ -312,7 +277,6 @@ export class BotManagerService {
       team: Team;
       difficulty: BotDifficulty;
       shipType: ShipType;
-      role: BotRole;
     }[] = [];
     for (const [slot, bot] of this.bots) {
       const ship = this.gameState.ships[slot];
@@ -323,13 +287,25 @@ export class BotManagerService {
           team: bot.team,
           difficulty: bot.difficulty,
           shipType: bot.shipType,
-          role: bot.brain.role,
         });
       }
     }
     for (const dead of deadBots) {
       this.removeBot(dead.slot);
-      this.spawnBot(dead.team, dead.difficulty, dead.shipType, dead.role);
+      this.spawnBot(dead.team, dead.difficulty, dead.shipType);
+    }
+
+    // Build team mission registries
+    const fedBots: TeamBotState[] = [];
+    const romBots: TeamBotState[] = [];
+    for (const [slot, bot] of this.bots) {
+      const entry: TeamBotState = {
+        slot,
+        currentMission: bot.brain.currentMission,
+        missionTargetId: bot.brain.currentMissionTargetId,
+      };
+      if (bot.team === Team.FEDERATION) fedBots.push(entry);
+      else romBots.push(entry);
     }
 
     // Run bot AI for each alive bot
@@ -352,10 +328,44 @@ export class BotManagerService {
         this.inputQueue,
         this.gameState.planetKnowledge[teamIdx],
         this.gameState.currentTick,
+        bot.team === Team.FEDERATION ? fedBots : romBots,
       );
     }
 
     this.checkDifficultyRebalance(tick);
+    this.logBotSummary(tick);
+  }
+
+  private static readonly MISSION_LABELS: Record<number, string> = {
+    [MissionType.PATROL]: "PTL",
+    [MissionType.BOMB]: "BMB",
+    [MissionType.TAKE]: "TAK",
+    [MissionType.ESCORT]: "ESC",
+    [MissionType.DEFEND]: "DEF",
+    [MissionType.OGG]: "OGG",
+    [MissionType.RESUPPLY]: "RSP",
+  };
+
+  private logBotSummary(tick: number): void {
+    if (tick % 50 !== 0) return;
+    const lines: string[] = [];
+    for (const [slot, bot] of this.bots) {
+      const ship = this.gameState.ships[slot];
+      if (!ship || ship.status !== ShipStatus.ALIVE) continue;
+      const m = bot.brain.currentMission;
+      const label = BotManagerService.MISSION_LABELS[m] ?? String(m);
+      const tid = bot.brain.currentMissionTargetId;
+      const tStr = tid >= 0 ? `→${tid}` : "";
+      const pos = `(${Math.round(ship.x)},${Math.round(ship.y)})`;
+      const hp = `${(100 - (ship.hullDamage / (SHIP_STATS[ship.shipType]?.maxHull ?? 100)) * 100).toFixed(0)}%hp`;
+      const fuel = `${((ship.fuel / (SHIP_STATS[ship.shipType]?.maxFuel ?? 10000)) * 100).toFixed(0)}%f`;
+      lines.push(`${bot.name}:${label}${tStr} ${pos} ${hp} ${fuel}`);
+    }
+    if (lines.length > 0) {
+      const summary = `t=${tick} | ${lines.join(" | ")}`;
+      this.logger.debug(summary);
+      botFileLog(summary);
+    }
   }
 
   // ---------------------------------------------------------------------------

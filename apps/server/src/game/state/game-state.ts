@@ -55,6 +55,7 @@ function createShip(slotIndex: number): ShipState {
     engineBurnoutTicks: 0,
     weaponBurnoutTicks: 0,
     phaserCooldownTicks: 0,
+    torpCooldownTicks: 0,
     kills: 0,
     armies: 0,
     orbitPlanetId: -1,
@@ -241,6 +242,7 @@ export class GameState {
     ship.engineBurnoutTicks = 0;
     ship.weaponBurnoutTicks = 0;
     ship.phaserCooldownTicks = 0;
+    ship.torpCooldownTicks = 0;
 
     ship.kills = 0;
     ship.armies = 0;

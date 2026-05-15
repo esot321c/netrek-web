@@ -104,17 +104,16 @@ export function initSprites(): void {
       const bitmapData = SHIP_BITMAPS[key];
       if (!bitmapData) continue;
 
-      for (let view = 0; view < SPRITE_VIEWS; view++) {
-        const bytes = bitmapData[view]!;
-        const imgData = decodeXBM(bytes, r, g, b);
+      // Only cache view 0 (up-facing); renderer rotates via canvas transform
+      const bytes = bitmapData[0]!;
+      const imgData = decodeXBM(bytes, r, g, b);
 
-        const oc = new OffscreenCanvas(SPRITE_WIDTH, SPRITE_HEIGHT);
-        const octx = oc.getContext("2d")!;
-        octx.putImageData(imgData, 0, 0);
+      const oc = new OffscreenCanvas(SPRITE_WIDTH, SPRITE_HEIGHT);
+      const octx = oc.getContext("2d")!;
+      octx.putImageData(imgData, 0, 0);
 
-        const cacheKey = `${team}_${shipType}_${view}`;
-        spriteCache.set(cacheKey, oc);
-      }
+      const cacheKey = `${team}_${shipType}_0`;
+      spriteCache.set(cacheKey, oc);
     }
   }
 

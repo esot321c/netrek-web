@@ -24,8 +24,8 @@ export const DIRECTION_COUNT = 256;
 // Movement
 // ---------------------------------------------------------------------------
 
-/** Game units per warp per tick. At warp 8 a CA moves 320 units/tick = 3200 units/sec. */
-export const SPEED_SCALE = 40;
+/** Game units per warp per tick. Original Netrek WARP1 ≈ 23 (calibrated: SB warp 2 Rom→Dra = 21s). */
+export const SPEED_SCALE = 23;
 
 // ---------------------------------------------------------------------------
 // Weapons
@@ -37,8 +37,8 @@ export const DET_FUEL_COST = 100;
 export const DET_WEAPON_HEAT = 20;
 export const DET_RANGE = 1600;
 
-export const TORP_LIFETIME_BASE = 50;
-export const TORP_LIFETIME_VARIANCE = 20;
+export const TORP_LIFETIME_BASE = 30;
+export const TORP_LIFETIME_VARIANCE = 10;
 export const TORP_WOBBLE = 1.5; // direction units of random deflection per tick
 export const TORP_HIT_RADIUS = 350; // game units — ship collision radius
 
@@ -865,7 +865,7 @@ export const SHIP_STATS: Readonly<Record<ShipType, ShipStats>> = Object.freeze({
     phaserHeat: 120,
     torpHeat: 30,
     explosionDamage: 200,
-    maxWpnTemp: 130,
+    maxWpnTemp: 1300,
     maxEgnTemp: 1000,
     cloakFuelPerTick: 500,
     phaserCooldownTicks: 5,
