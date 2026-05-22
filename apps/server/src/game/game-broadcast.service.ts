@@ -12,6 +12,7 @@ import { GameService } from "./game.service";
 import {
   GAME_TICK_EVENT,
   GAME_WIN_EVENT,
+  GAME_RESET_EVENT,
   GAME_KILL_EVENT,
 } from "./game-events";
 
@@ -132,6 +133,17 @@ export class GameBroadcastService {
   }): void {
     for (const player of this.players.values()) {
       player.socket.emit("game_win", data);
+    }
+  }
+
+  @OnEvent(GAME_RESET_EVENT)
+  handleReset(): void {
+    const state = this.gameService.state;
+    for (const player of this.players.values()) {
+      const ship = state.ships[player.slot]!;
+      ship.playerId = player.userId;
+      ship.deathTick = 0;
+      player.socket.emit("game_reset");
     }
   }
 

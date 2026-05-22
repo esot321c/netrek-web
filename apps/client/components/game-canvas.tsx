@@ -21,6 +21,7 @@ import {
   onKill,
   onRoster,
   onGameWin,
+  onGameReset,
   onConnectError,
   sendRespawn,
   sendInput,
@@ -233,6 +234,12 @@ export default function GameCanvas({ wsUrl, gameToken }: GameCanvasProps) {
     onGameWin((data) => {
       setGameWinData(data);
       setTimeout(() => setGameWinData(null), 10_000);
+    });
+
+    onGameReset(() => {
+      setPhase("dead");
+      setRespawnReject(null);
+      setRespawnCountdown(0);
     });
 
     onChatChange(() => {

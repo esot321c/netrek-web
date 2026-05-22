@@ -830,10 +830,12 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
     if (!this.tmode) return;
     if (ship.orbitPlanetId < 0) return;
     if (ship.armies <= 0) return;
-    if (ship.shipType === ShipType.SB) return;
 
     const planet = this.gameService.state.planets[ship.orbitPlanetId];
     if (!planet) return;
+
+    // SBs can reinforce friendly planets but cannot capture enemy ones
+    if (ship.shipType === ShipType.SB && planet.team !== ship.team) return;
 
     ship.shieldsUp = false;
     ship.beaming = 2; // beam down
@@ -882,6 +884,12 @@ export class GameLoopService implements OnModuleInit, OnModuleDestroy {
       } else {
         // Beam down — drop army on planet (enemy, neutral, or friendly)
         if (ship.armies <= 0) {
+          ship.beaming = 0;
+          continue;
+        }
+
+        // SBs can only beam down on friendly planets
+        if (ship.shipType === ShipType.SB && planet.team !== ship.team) {
           ship.beaming = 0;
           continue;
         }

@@ -234,9 +234,9 @@ export const TMODE_MIN_PLAYERS = 4;
 // Win conditions
 // ---------------------------------------------------------------------------
 
-export const SURRENDER_PLANET_THRESHOLD = 2;
-export const SURRENDER_FREEZE_PLANETS = 3;
-export const SURRENDER_CLEAR_PLANETS = 4;
+export const SURRENDER_PLANET_THRESHOLD = 3;
+export const SURRENDER_FREEZE_PLANETS = 4;
+export const SURRENDER_CLEAR_PLANETS = 5;
 /** 20 minutes at 10Hz = 12000 ticks */
 export const SURRENDER_TIMER_TICKS = 20 * 60 * 10;
 

@@ -24,6 +24,7 @@ let rosterCallback: ((roster: RosterMap) => void) | null = null;
 let gameWinCallback:
   | ((data: { winningTeam: number; losingTeam: number; type: string }) => void)
   | null = null;
+let gameResetCallback: (() => void) | null = null;
 let connectErrorCallback: ((err: Error) => void) | null = null;
 
 export function getSocket(): Socket | null {
@@ -82,6 +83,10 @@ export function connect(wsUrl: string, gameToken: string): Socket {
     },
   );
 
+  socket.on("game_reset", () => {
+    gameResetCallback?.();
+  });
+
   return socket;
 }
 
@@ -128,6 +133,10 @@ export function onGameWin(
   cb: (data: { winningTeam: number; losingTeam: number; type: string }) => void,
 ): void {
   gameWinCallback = cb;
+}
+
+export function onGameReset(cb: () => void): void {
+  gameResetCallback = cb;
 }
 
 export function onConnectError(cb: (err: Error) => void): void {
